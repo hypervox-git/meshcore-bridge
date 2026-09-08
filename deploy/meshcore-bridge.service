@@ -1,0 +1,17 @@
+[Unit]
+Description=MeshCore Serial MQTT Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mark
+Group=dialout
+WorkingDirectory=/home/mark/meshcore-bridge
+ExecStartPre=/bin/sleep 5
+ExecStart=/home/mark/meshcore-bridge/.venv/bin/python app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

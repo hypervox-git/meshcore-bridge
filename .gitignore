@@ -1,0 +1,15 @@
+# real site config — never commit
+config.py
+
+# runtime data (contains node list, messages, location history)
+*.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# misc
+*.log

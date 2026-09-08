@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Meshtastic Gateway</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="header-top">
+    <div class="logo"><div class="logo-dot"></div>Meshtastic</div>
+    <div class="status-bar">
+      <div class="si"><div class="dot" id="serial-dot"></div><span id="serial-status">Serial</span></div>
+      <div class="si"><div class="dot" id="mqtt-dot"></div><span id="mqtt-status">MQTT</span></div>
+      <button class="hdr-btn" id="notif-btn" onclick="toggleNotif()">Notify</button>
+      <button class="hdr-btn" onclick="flushNodeDb()" title="Flush stored nodes + locations">Flush DB</button>
+      <span id="clock"></span>
+    </div>
+  </div>
+  <div class="sysinfo-bar">
+    <div class="sys-item"><span style="color:var(--text-muted);font-size:10px">CPU</span><span class="sys-val" id="sys-cpu">-</span></div>
+    <div class="sys-item"><span style="color:var(--text-muted);font-size:10px">RAM</span><span class="sys-val" id="sys-ram">-</span></div>
+    <div class="sys-item"><span style="color:var(--text-muted);font-size:10px">Temp</span><span class="sys-val" id="sys-temp">-</span></div>
+    <div class="sys-item"><span style="color:var(--text-muted);font-size:10px">Uptime</span><span class="sys-val sys-ok" id="sys-uptime">-</span></div>
+  </div>
+</header>
+
+<nav id="main-nav">
+  <div class="nav-tab active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</div>
+  <div class="nav-tab" data-page="map" onclick="showPage('map')">Map</div>
+  <div class="nav-tab" data-page="log" onclick="showPage('log')">Log <span class="badge" id="log-count" style="margin-left:4px">0</span></div>
+  <div class="nav-tab" data-page="apidocs" onclick="showPage('apidocs')">API</div>
+</nav>
+
+<!-- Dashboard -->
+<div class="page active" id="page-dashboard">
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Packets</div><div class="stat-value" id="stat-total">0</div></div>
+    <div class="stat warn"><div class="stat-label">Nodes</div><div class="stat-value" id="stat-nodes">0</div></div>
+    <div class="stat info"><div class="stat-label">RSSI</div><div class="stat-value" id="stat-rssi">-</div></div>
+    <div class="stat dim"><div class="stat-label">SNR</div><div class="stat-value" id="stat-snr">-</div></div>
+  </div>
+  <div class="radar-wrap">
+    <div class="radar-label" id="radar-label">Node map - waiting for data...</div>
+    <svg id="radar-svg" viewBox="0 0 380 220" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+  <div class="scroll-area">
+    <div class="nodes-grid" id="nodes-grid"><div class="empty-state">Waiting for nodes...</div></div>
+  </div>
+</div>
+
+<!-- Map -->
+<div class="page" id="page-map">
+  <div id="tracker-bar"><span class="tracker-bar-label">Trails</span><span id="tracker-list"><span class="tracker-none">no Tracker-named devices seen yet</span></span></div>
+  <div id="leaflet-map"></div>
+</div>
+
+<!-- Log -->
+<div class="page" id="page-log">
+  <div class="log-toolbar">
+    <button class="btn" id="scroll-lock-btn" onclick="toggleScrollLock()" style="font-size:10px;padding:4px 10px">Pause</button>
+    <button class="btn" onclick="exportCSV()" style="font-size:10px;padding:4px 10px">Export CSV</button>
+    <button class="btn" id="mqtt-view-btn" onclick="toggleMqttView()" style="font-size:10px;padding:4px 10px">MQTT</button>
+    <span class="badge" id="log-count2">0 packets</span>
+  </div>
+  <div class="scroll-area" id="log-container">
+    <div class="empty-state">Listening on {{ serial_port }}...</div>
+  </div>
+  <div class="scroll-area" id="mqtt-container" style="display:none"></div>
+</div>
+
+<!-- API docs -->
+<div class="page" id="page-apidocs">
+  <div class="scroll-area">
+    <div class="api-docs" id="api-docs-content"></div>
+  </div>
+</div>
+
+<script>window.BRIDGE_CONFIG={gatewayLat:{{ gateway_lat }},gatewayLon:{{ gateway_lon }},trailMax:{{ trail_max }}};</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

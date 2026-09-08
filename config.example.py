@@ -1,0 +1,22 @@
+# Copy to config.py and edit. config.py is git-ignored.
+SERIAL_PORT     = "/dev/serial/by-id/usb-CHANGEME"   # MeshCore node flashed as a SERIAL companion
+BAUD_RATE       = 115200
+MESHCORE_DEBUG  = False        # True logs raw event payloads (use to confirm field mapping)
+MQTT_BROKER     = "127.0.0.1"
+MQTT_PORT       = 1883
+MQTT_TOPIC      = "meshcore"
+MQTT_USER       = None
+MQTT_PASS       = None
+WEB_PORT        = 5001
+MSG_LOG_FILE    = "meshcore_messages.json"
+NODE_DB_FILE    = "meshcore_nodes.json"
+ALIAS_FILE      = "meshcore_aliases.json"
+POS_HIST_FILE   = "meshcore_poshist.json"
+MAX_LOG         = 500
+MAX_TRAIL       = 20
+HA_DISCOVERY    = True
+HA_PREFIX       = "homeassistant"
+GATEWAY_LAT     = 0.0
+GATEWAY_LON     = 0.0
+POS_HIST_DAYS   = 28
+POS_HIST_MAX    = 10000
