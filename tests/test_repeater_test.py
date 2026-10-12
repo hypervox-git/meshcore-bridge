@@ -150,3 +150,19 @@ def test_link_published_to_node_db(rep, monkeypatch):
     nb = {n['id']: n for n in rt.view()['neighbours']}
     assert nb['AABBCCDD']['name'] == 'Hill repeater' and nb['AABBCCDD']['known'] is True
     n0 = len(links); rt.on_sample(snap(2, -97)); assert len([1 for e, d in emitted if e == 'node_link']) == n0  # no churn
+
+
+def test_monitor_tracks_neighbours_without_a_test(rep, monkeypatch):
+    # Always-on: dashboard/map/log fill even when no test is running.
+    emitted = []
+    monkeypatch.setattr(rt, '_emit', lambda e, d: emitted.append((e, d)))
+    monkeypatch.setattr(rt, 'update_node_db', lambda k, e: rt.node_db.setdefault(k, {}).update(e))
+    rt.node_db.clear(); rt._m = None; rt._t = None
+    rt.node_db['!aabbccdd'] = {'name': 'Hill', 'lat': 51.3, 'lon': -2.9}
+    snap = {'radio': {'last_rssi': -100, 'last_snr': 4.0, 'noise_floor': -115}, 'packets': {'recv': 1},
+            'neighbours': [{'id': 'AABBCCDD', 'age_s': '1', 'snr': '16'}]}
+    rt.on_sample(snap)
+    assert rt.node_db['!aabbccdd']['pathloss'] == 120.0
+    kinds = [e for e, d in emitted]
+    assert 'node_link' in kinds and 'packet' in kinds                      # map/dashboard + log
+    assert rt.view()['neighbours'][0]['name'] == 'Hill'                    # view works with no test

@@ -90,6 +90,9 @@ socket.on('node_link',(d)=>{
   if(d.rssi!=null) n.rssi=d.rssi;
   if(d.snr!=null) n.snr=parseFloat(d.snr).toFixed(1);
   if(d.pathloss!=null) n.pathloss=d.pathloss;
+  if(d.noise!=null) n.noise=d.noise;
+  if(d.tx_air!=null){n.txAir=d.tx_air;n.rxAir=d.rx_air;}
+  if(d.hw) n.hw=d.hw;
   if(d.lat!=null&&d.lon!=null){n.lat=d.lat;n.lon=d.lon;}
   n.linkTs=d.linkTs;n.lastSeenTs=d.linkTs*1000;
   renderNodes();
@@ -192,6 +195,8 @@ function refreshMapData(){
       if(node.snr) n.snr=parseFloat(node.snr).toFixed(1);
       if(node.rssi!==undefined) n.rssi=node.rssi;
       if(node.pathloss!==undefined) n.pathloss=node.pathloss;
+      if(node.noise!==undefined) n.noise=node.noise;
+      if(node.tx_air!==undefined){n.txAir=node.tx_air;n.rxAir=node.rx_air;}
       if(node.linkTs) n.linkTs=node.linkTs;
       if(node.deviceMetrics&&node.deviceMetrics.batteryLevel!==undefined) n.battery=node.deviceMetrics.batteryLevel;
       if(node.lastHeard) n.lastSeenTs=node.lastHeard*1000;
@@ -518,6 +523,8 @@ function renderNodes(){
       +(n.voltage?'<div class="node-row"><span class="node-row-label">Voltage</span><span>'+n.voltage+'V</span></div>':'')
       +(n.rssi?'<div class="node-row"><span class="node-row-label">RSSI</span><span class="'+rssiClass(n.rssi)+'">'+n.rssi+' dBm</span></div>':'')
       +(n.snr?'<div class="node-row"><span class="node-row-label">SNR</span><span>'+n.snr+' dB</span></div>':'')
+      +(n.noise!=null?'<div class="node-row"><span class="node-row-label">Noise floor</span><span>'+n.noise+' dBm</span></div>':'')
+      +(n.txAir!=null?'<div class="node-row"><span class="node-row-label">Airtime TX/RX</span><span>'+n.txAir+' s / '+n.rxAir+' s</span></div>':'')
       +(n.pathloss!=null?'<div class="node-row"><span class="node-row-label">Path loss</span><span>~'+n.pathloss+' dB</span></div>':'')
       +(n.lat?'<div class="node-row"><span class="node-row-label">Lat</span><span>'+n.lat.toFixed(5)+'</span></div>':'')
       +(n.lon?'<div class="node-row"><span class="node-row-label">Lon</span><span>'+n.lon.toFixed(5)+'</span></div>':'')
@@ -787,6 +794,8 @@ function loadNodes(){
       if(node.snr) n.snr=parseFloat(node.snr).toFixed(1);
       if(node.rssi!==undefined) n.rssi=node.rssi;
       if(node.pathloss!==undefined) n.pathloss=node.pathloss;
+      if(node.noise!==undefined) n.noise=node.noise;
+      if(node.tx_air!==undefined){n.txAir=node.tx_air;n.rxAir=node.rx_air;}
       if(node.linkTs) n.linkTs=node.linkTs;
       if(node.hopsAway!==undefined) n.hops=node.hopsAway;
       if(node.lastHeard){n.lastSeenTs=node.lastHeard*1000;n.lastSeen=new Date(node.lastHeard*1000).toLocaleTimeString('en-GB',{hour12:false,hour:'2-digit',minute:'2-digit'});}

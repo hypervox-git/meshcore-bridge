@@ -336,9 +336,12 @@ function repApply(r){
   if (!r || r.mode !== 'repeater') return;
   document.getElementById('rep-card').style.display = '';
   ['lt-card', 'tr-card'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
-  const nb = document.getElementById('nb-btn'); if (nb) nb.disabled = true;
-  const st = document.getElementById('nb-status');
-  if (st) st.textContent = 'Repeater mode: discovery needs a Companion-USB node (see Test tab)';
+  const nb = document.getElementById('nb-btn');
+  if (nb){ nb.disabled = false; nb.onclick = repDiscover; nb.removeAttribute('onclick'); nb.addEventListener('click', repDiscover); }
+  document.querySelectorAll('.nb-type').forEach(c => { if (c.parentElement) c.parentElement.style.display = 'none'; });
+  repNeighbours(r.neighbours, r.connected);
+  if (r.radio) window.repGwPopup = '<b>Local repeater</b><br>noise floor ' + r.radio.noise_floor + ' dBm<br>last RSSI ' + r.radio.last_rssi
+    + ' dBm, SNR ' + r.radio.last_snr + ' dB' + (r.neighbours ? '<br>' + r.neighbours.length + ' neighbour(s) heard' : '');
   document.getElementById('rep-info').textContent = (r.ver ? 'Firmware ' + r.ver + ' - ' : '') + r.port
     + (r.connected ? '' : ' - NOT CONNECTED: ' + (r.error || ''));
   const q = r.radio; if (!q) return;
@@ -376,6 +379,7 @@ function rtFmt(sec){ const m = Math.floor(sec / 60), s = sec % 60; return m + ':
 
 function rtRender(v){
   if (!v) return;
+  window.rtLast = v;
   const running = !!v.running;
   if (!rtInit){
     rtInit = true;
@@ -434,3 +438,36 @@ socket.on('rtest_state', rtRender);
 socket.on('rtest_update', rtRender);
 setInterval(() => { if (document.getElementById('rep-card').style.display !== 'none') fetch('/api/rtest/status').then(r => r.json()).then(rtRender).catch(() => {}); }, 5000);
 fetch('/api/rtest/status').then(r => r.json()).then(rtRender).catch(() => {});
+
+// Neighbours tab in repeater mode: the repeater's own neighbour table, live.
+let repNbLast = null;
+function repNeighbours(rows, connected){
+  repNbLast = rows || repNbLast;
+  const el = document.getElementById('nb-results'); if (!el) return;
+  const rt = (window.rtLast && window.rtLast.neighbours) || [];
+  const byId = {}; rt.forEach(n => byId[n.id] = n);
+  document.getElementById('nb-count').textContent = (rows ? rows.length : 0) + ' found';
+  if (!rows || !rows.length){
+    el.innerHTML = '<div class="empty-state">' + (connected === false ? 'Repeater not connected.' : 'The repeater has not heard any neighbour yet.')
+      + '<br>Press Discover to ask neighbours to answer (if the firmware supports <code>discover.neighbors</code>), otherwise neighbours appear when their advert is heard.</div>';
+    return;
+  }
+  el.innerHTML = '<table class="nb-table"><tr><th>Node</th><th>SNR</th><th>RSSI*</th><th>Path loss (est.)</th><th>Last heard</th><th>Position</th></tr>'
+    + rows.map(r => { const t = byId[r.id] || {};
+      return '<tr><td><div class="nb-name">' + escHtml(r.name || 'unknown node') + '</div><div class="nb-id">' + escHtml(r.id) + '</div></td>'
+        + '<td style="color:' + snrColor(r.snr_db) + '">' + fmt(r.snr_db, ' dB', 2) + '</td><td>' + fmt(t.rssi, ' dBm', 0) + '</td><td>' + fmt(t.pathloss_db, ' dB', 1) + '</td>'
+        + '<td>' + (r.age_s == null ? '-' : r.age_s + ' s ago') + '</td><td>' + (r.lat != null ? r.lat.toFixed(4) + ', ' + r.lon.toFixed(4) : '-') + '</td></tr>'; }).join('')
+    + '</table><div class="config-hint" style="margin:.4rem 1rem">*RSSI and path loss are filled in when the neighbour\'s advert is heard while the bridge is watching.</div>';
+}
+function repDiscover(){
+  const st = document.getElementById('nb-status'); st.textContent = 'Sending discover.neighbors...'; st.className = 'send-status';
+  post('/api/rtest/discover').then(d => {
+    if (!d.ok){ setStatus('nb-status', d.error, 'err'); return; }
+    const x = d.discover || {};
+    st.textContent = x.supported ? 'Discovery sent' + (x.tx_air_s != null ? ' (' + x.tx_air_s + ' s airtime)' : '') + ' - results appear as neighbours answer'
+                                 : 'Firmware has no discover.neighbors - listening passively (' + (x.reply || '') + ')';
+    if (d.neighbours) repNeighbours(d.neighbours, true);
+  }).catch(e => setStatus('nb-status', 'Error: ' + e, 'err'));
+}
+
+setInterval(() => { try { if (window.repGwPopup && typeof gatewayMarker !== 'undefined' && gatewayMarker) gatewayMarker.setPopupContent(window.repGwPopup); } catch (e) {} }, 2000);

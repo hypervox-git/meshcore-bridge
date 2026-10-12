@@ -58,6 +58,7 @@ def _marker():
 
 _lock = threading.RLock()
 _t = None                  # current/last session dict
+_m = None                  # always-on monitor (same shape; no timer, no repeat change)
 _stop = threading.Event()
 _restoring = False
 _ONOFF = re.compile(r'\b(on|off)\b', re.I)
@@ -184,14 +185,7 @@ def _on_lost():
 
 # ---- session ------------------------------------------------------------------
 
-def _parse_snr(v):
-    """Neighbour SNR column: firmware stores SNR*4 as an integer; a decimal is taken as dB."""
-    try:
-        if '.' in str(v):
-            return float(v)
-        return int(v) / 4.0
-    except (TypeError, ValueError):
-        return None
+_parse_snr = cli.parse_snr
 
 
 def _tx_air():
@@ -208,9 +202,9 @@ def _tx_air():
 def discover():
     """Send `discover.neighbors` (zero-hop). Returns a result dict; never raises on 'unsupported'."""
     global _last_discover
-    s = _t
-    if not s or not s.get('running'):
-        raise RuntimeError('start a test first')
+    s = _t if (_t and _t.get('running')) else _monitor()
+    if not state.serial_connected:
+        raise RuntimeError('repeater not connected')
     wait = _discover_min_interval() - (time.time() - _last_discover)
     if wait > 0:
         raise RuntimeError(f'discovery is rate-limited - try again in {round(wait)} s')
@@ -226,19 +220,10 @@ def discover():
             res['tx_air_s'] = round(after - before, 3)
     s['discover'] = res
     _emit('rtest_state', view())
-    return {'ok': True, 'discover': res}
+    return {'ok': True, 'discover': res, 'neighbours': cli.snapshot().get('neighbours')}
 
 
-def resolve_node(hex_id):
-    """Map a neighbour's pubkey prefix to a node_db key ('!aabbccdd'); None if unknown."""
-    h = str(hex_id).lower().strip()
-    if len(h) < 2:
-        return None
-    for k in node_db:
-        kk = k.lstrip('!').lower()
-        if kk and (kk.startswith(h) or h.startswith(kk)):
-            return k
-    return None
+resolve_node = cli.resolve_node
 
 
 def _publish_link(n, s):
@@ -260,8 +245,9 @@ def _publish_link(n, s):
         entry['pathloss_tx_dbm'] = s['assumed_tx_dbm']
     if key not in node_db:
         entry['name'] = 'repeater ' + h[:8]
+        entry['synthetic'] = True
     update_node_db(key, entry)
-    n['known'] = known
+    n['known'] = known and not node_db.get(key, {}).get('synthetic')
     nd = node_db.get(key, {})
     n['name'] = nd.get('name')
     n['lat'], n['lon'] = nd.get('lat'), nd.get('lon')
@@ -395,10 +381,18 @@ def install_exit_hooks():
 
 # ---- sampling ------------------------------------------------------------------
 
+def _monitor():
+    global _m
+    if _m is None:
+        _m = _new_session(0, False, float(_c('ASSUMED_NEIGHBOUR_TX_DBM', 20)))
+        _m['running'] = False
+    return _m
+
+
 def on_sample(snap):
-    s = _t
-    if not s or not s.get('running'):
-        return
+    # Track neighbours ALWAYS (so the dashboard/map/log fill without starting a test); a
+    # running test just uses its own session (timer, stats) instead of the monitor's.
+    s = _t if (_t and _t.get('running')) else _monitor()
     radio, pk = snap.get('radio') or {}, snap.get('packets') or {}
     now = time.time()
     if radio.get('noise_floor') is not None:
@@ -433,17 +427,23 @@ def on_sample(snap):
             n['heard'] += 1
             n['last'] = now
             n['rssi'] = radio.get('last_rssi')          # RSSI of the advert that refreshed it
+            n['_log'] = True
         sig = (n['heard'], n['snr'])
         if sig != n.get('sig'):                          # only on change (node_db writes to disk)
             n['sig'] = sig
             _publish_link(n, s)
+            if n.pop('_log', False):
+                pl = n.get('pathloss_db') if n.get('pathloss_db') is not None else (round(s['assumed_tx_dbm'] - n['rssi'], 1) if n['rssi'] is not None else None)
+                _emit('packet', {'from': n['key'], 'fromId': n['key'], 'rxRssi': n['rssi'], 'rxSnr': n['snr'],
+                                 'decoded': {'portnum': 'ADVERT', 'text': 'zero-hop advert heard from ' + (n.get('name') or n['id'])
+                                             + f" - RSSI {n['rssi']} dBm, SNR {n['snr']} dB" + (f', path loss ~{pl} dB' if pl is not None else '')}})
     _emit('rtest_update', view())
 
 
 def view():
-    s = _t
+    s = _t or (_m if _m and _m['nb'] else None)
     if not s:
-        return {'running': False, 'minutes_default': _minutes_default(), 'minutes_max': _minutes_max(),
+        return {'running': False, 'discover': (_m or {}).get('discover'), 'minutes_default': _minutes_default(), 'minutes_max': _minutes_max(),
                 'offline_default': bool(_c('REP_TEST_OFFLINE', True)),
                 'assumed_tx_dbm': float(_c('ASSUMED_NEIGHBOUR_TX_DBM', 20)),
                 'restore_pending': os.path.exists(_marker()), 'connected': bool(state.serial_connected)}

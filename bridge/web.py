@@ -38,7 +38,7 @@ def api_nodes():
         if n.get("lat") is not None and n.get("lon") is not None:
             node["position"] = {"latitudeI": int(n["lat"] * 1e7),
                                 "longitudeI": int(n["lon"] * 1e7)}
-        for k in ("rssi", "pathloss", "pathloss_tx_dbm", "linkTs"):
+        for k in ("rssi", "pathloss", "pathloss_tx_dbm", "linkTs", "noise", "tx_air", "rx_air"):
             if n.get(k) is not None:
                 node[k] = n[k]
         dm = {}
@@ -202,6 +202,12 @@ def api_test_link_stop():
 def api_test_trace():
     d = request.get_json(silent=True) or {}
     return _guard(lambda: testmode.traceroute(d.get("to", "")))
+
+
+@app.route("/api/channels")
+def api_channels():
+    # MeshCore: one chat channel (index 0) is used for sending; avoids a 404 on dashboard load.
+    return jsonify([{"index": 0, "name": "public", "role": "PRIMARY", "psk_type": "meshcore"}])
 
 
 @app.route("/api/aliases", methods=["GET"])
