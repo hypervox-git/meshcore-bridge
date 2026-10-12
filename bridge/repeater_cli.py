@@ -30,6 +30,12 @@ BAUD = int(_c('BAUD_RATE', 115200))
 POLL = max(float(_c('TEST_LOCAL_POLL', 2.0)), 1.0)
 SLOW_EVERY = 5                          # packets/neighbours every Nth radio poll
 
+hooks = []             # callables(snapshot) - run after every poll cycle (test mode)
+on_connect = []        # callables() - run after (re)connecting
+on_lost = []           # callables() - run when the serial link drops
+test_active = threading.Event()   # set by repeater_test: poll fast, include neighbours each cycle
+SAMPLE = max(float(_c('REP_TEST_SAMPLE', 1.0)), 0.5)
+
 _lock = threading.Lock()
 _ser = None
 latest = {'ver': None, 'radio': None, 'packets': None, 'neighbours': None, 'ts': None}
@@ -84,6 +90,13 @@ def _cmd(line, wait=3.0, idle=0.5):
     return out
 
 
+def command(line, wait=3.0):
+    """Public: run one CLI line on the repeater (raises if not connected)."""
+    if _ser is None or not state.serial_connected:
+        raise RuntimeError('repeater not connected')
+    return _cmd(line, wait=wait)
+
+
 def _json_of(lines):
     for t in lines:
         m = _JSON.search(t)
@@ -125,26 +138,44 @@ def _loop():
             _set(True)
             print(f"[repeater] connected on {PORT}: {latest['ver']}")
             delay = 5
+            for h in on_connect:
+                h()
             while True:
+                fast = test_active.is_set()
+                if fast or n % SLOW_EVERY == 0:
+                    # neighbours first, then radio stats: last_rssi then belongs to
+                    # (or after) any advert that just refreshed a neighbour entry.
+                    latest['neighbours'] = parse_neighbours(_cmd('neighbors'))
                 radio = _json_of(_cmd('stats-radio'))
                 if radio is None:
                     raise RuntimeError('no reply to stats-radio - is this repeater firmware?')
                 latest['radio'], latest['ts'] = radio, time.time()
-                if n % SLOW_EVERY == 0:
+                if fast or n % SLOW_EVERY == 0:
                     latest['packets'] = _json_of(_cmd('stats-packets')) or latest['packets']
-                    latest['neighbours'] = parse_neighbours(_cmd('neighbors'))
                 n += 1
-                socketio.emit('rep_sample', snapshot(), namespace='/')
+                snap = snapshot()
+                socketio.emit('rep_sample', snap, namespace='/')
                 socketio.emit('test_local', {'ts': latest['ts'], 'local': radio}, namespace='/')
-                time.sleep(POLL)
+                for h in hooks:
+                    try:
+                        h(snap)
+                    except Exception as e:
+                        print(f"[repeater] hook error: {e}")
+                time.sleep(SAMPLE if fast else POLL)
         except Exception as e:
             _set(False, str(e) or e.__class__.__name__)
             print(f"[repeater] {e} - retrying in {delay}s")
+            for h in on_lost:
+                try:
+                    h()
+                except Exception:
+                    pass
             try:
                 if _ser:
                     _ser.close()
             except Exception:
                 pass
+            _ser = None
             time.sleep(delay)
             delay = min(delay * 2, 60)
 

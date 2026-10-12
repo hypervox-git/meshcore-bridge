@@ -102,7 +102,18 @@
         <div class="tm-tile"><div class="tm-label">Receive errors</div><div class="tm-val" id="rp-err">-</div></div>
       </div>
       <div class="tm-chart"><canvas id="rp-chart"></canvas></div>
-      <div class="config-title" style="margin-top:.8rem">Heard directly (neighbors)</div>
+      <div class="config-title" style="margin-top:.8rem">Repeater test mode</div>
+      <div class="warning-box" id="rt-warn">While a test runs the repeater can be taken <b>out of the mesh</b> (it stops forwarding). It returns automatically when the timer ends, on Stop, or if the bridge restarts. If the Pi loses power mid-test, run <code>set repeat on</code> on the repeater.</div>
+      <div class="config-row"><span class="config-label">Duration (min)<div class="config-hint" id="rt-max"></div></span><input id="rt-min" type="number" min="1" step="1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Take repeater out of the mesh<div class="config-hint">Stops forwarding during the test</div></span><input id="rt-off" type="checkbox"></div>
+      <div class="config-row"><span class="config-label">Assumed neighbour TX (dBm)<div class="config-hint">Used only for the path-loss estimate</div></span><input id="rt-tx" type="number" step="1" class="config-num"></div>
+      <div class="config-actions">
+        <button class="btn btn-send" id="rt-start" onclick="rtStart()">Start test</button>
+        <button class="btn btn-danger" id="rt-stop" onclick="rtStop()" disabled>Stop &amp; restore</button>
+        <span class="badge" id="rt-state">Idle</span><span class="send-status" id="rt-status"></span>
+      </div>
+      <div id="rt-results"></div>
+      <div class="config-title" style="margin-top:.8rem">Heard directly (neighbors table)</div>
       <pre id="rp-nb" class="duty-note" style="white-space:pre-wrap">-</pre>
       <div class="config-hint">Nothing here transmits, so it costs no duty cycle. Discovery, traceroute and remote polling need a Companion-USB node.</div>
     </div>

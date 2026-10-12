@@ -42,3 +42,11 @@ NEIGHBOURS_MAX        = 16     # rows requested from a repeater's neighbour tabl
 # Default guest/admin password used when you leave the password box empty. Repeaters
 # only answer status/neighbour requests after a login. Keep it in config.py only.
 REPEATER_PASSWORD     = ""
+
+# --- Repeater test mode (SERIAL_MODE = "repeater") ---------------------------------
+REP_TEST_MINUTES         = 10     # default test length; the repeater is restored to the mesh after this
+REP_TEST_MAX_MINUTES     = 60     # hard cap on what the web UI may request
+REP_TEST_OFFLINE         = True   # default: stop forwarding (`set repeat off`) during a test
+REP_TEST_SAMPLE          = 1.0    # s between polls while a test runs (serial only, no airtime)
+ASSUMED_NEIGHBOUR_TX_DBM = 20     # neighbour TX power used for the path-loss ESTIMATE
+REP_RESTORE_FILE         = "meshcore_repeater_restore.json"   # crash-safety marker (git-ignored)

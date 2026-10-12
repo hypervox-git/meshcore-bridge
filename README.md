@@ -116,7 +116,19 @@ If the node on `SERIAL_PORT` runs **Repeater** firmware (its USB serial is a tex
 companion handshake fails with "No response from meshcore node"), set `SERIAL_MODE = "repeater"`
 in `config.py`. The bridge then polls `stats-radio`, `stats-packets` and `neighbors` read-only
 and shows live noise floor / RSSI / SNR, airtime, packet counters and directly-heard
-neighbours on the **Test** tab. Nothing is transmitted. Discovery, traceroute and remote
+neighbours on the **Test** tab. Nothing is transmitted.
+
+**Repeater test mode** (Test tab -> *Start test*): a time-boxed receive-only survey with
+per-neighbour SNR / RSSI / **estimated path loss**, every packet heard, and noise-floor stats.
+Optionally takes the repeater out of the mesh (`set repeat off`) while it runs. It **always
+returns**: when the timer ends (`REP_TEST_MINUTES`, capped by `REP_TEST_MAX_MINUTES`), on Stop,
+if the serial link drops, on bridge shutdown, and after a bridge crash (a git-ignored marker file
+is acted on at the next connect; restore retries until `get repeat` confirms). `set repeat` is
+stored in the repeater's flash, so if the *Pi itself* loses power mid-test, send `set repeat on`.
+Discovery is **passive** (the firmware has no CLI command to make neighbours answer; a neighbour
+shows up when its zero-hop advert is heard) - use a Companion-USB node for active discovery.
+Path loss = assumed neighbour TX power (`ASSUMED_NEIGHBOUR_TX_DBM`) - measured RSSI, so it is
+an estimate. Discovery, traceroute and remote
 polling need a Companion-USB node (`SERIAL_MODE = "companion"`, the default).
 
 ### Duty cycle

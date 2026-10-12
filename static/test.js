@@ -369,3 +369,61 @@ function repApply(r){
 }
 socket.on('rep_sample', repApply);
 fetch('/api/repeater').then(r => r.json()).then(repApply).catch(() => {});
+
+// ---- Repeater test mode ------------------------------------------------------
+let rtInit = false;
+function rtFmt(sec){ const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); }
+
+function rtRender(v){
+  if (!v) return;
+  const running = !!v.running;
+  if (!rtInit){
+    rtInit = true;
+    document.getElementById('rt-min').value = v.minutes_default;
+    document.getElementById('rt-off').checked = !!v.offline_default;
+    document.getElementById('rt-tx').value = v.assumed_tx_dbm;
+    document.getElementById('rt-max').textContent = 'max ' + v.minutes_max + ' min';
+  }
+  ['rt-min', 'rt-off', 'rt-tx'].forEach(id => document.getElementById(id).disabled = running);
+  document.getElementById('rt-start').disabled = running || !v.connected;
+  document.getElementById('rt-stop').disabled = !running;
+  const st = document.getElementById('rt-state');
+  if (running){
+    st.textContent = (v.offline ? 'Repeater OFFLINE - returns to the mesh in ' : 'Testing (still forwarding) - ends in ') + rtFmt(v.remaining_s);
+    st.className = 'badge on';
+  } else {
+    st.textContent = v.restore_pending ? 'Restoring repeater to the mesh...' : (v.reason ? 'Ended: ' + v.reason : 'Idle');
+    st.className = 'badge';
+  }
+  const el = document.getElementById('rt-results');
+  if (!v.neighbours && !v.heard){ el.innerHTML = ''; return; }
+  const nb = (v.neighbours || []).map(n => '<tr><td><div class="nb-id">' + escHtml(n.id) + '</div></td>'
+    + '<td style="color:' + snrColor(n.snr) + '">' + fmt(n.snr, ' dB', 2) + '</td><td>' + fmt(n.rssi, ' dBm', 0) + '</td>'
+    + '<td>' + fmt(n.pathloss_db, ' dB', 1) + '</td><td>' + n.heard + '</td><td>' + (n.age == null ? '-' : Math.round(n.age) + ' s') + '</td></tr>').join('');
+  const hv = (v.heard || []).slice().reverse().map(h => '<tr><td>' + new Date(h.ts * 1000).toLocaleTimeString('en-GB', {hour12: false})
+    + '</td><td>' + fmt(h.rssi, ' dBm', 0) + '</td><td style="color:' + snrColor(h.snr) + '">' + fmt(h.snr, ' dB', 1) + '</td><td>' + h.n + '</td></tr>').join('');
+  el.innerHTML = '<div class="duty-note">Packets heard this test: <b>' + v.packets_heard + '</b>'
+    + (v.noise ? ' - noise floor min/avg/max ' + v.noise.min + ' / ' + v.noise.avg + ' / ' + v.noise.max + ' dBm' : '')
+    + (v.our_tx_dbm != null ? ' - our TX power ' + v.our_tx_dbm + ' dBm' : '')
+    + (v.radio_cfg ? ' - radio ' + escHtml(v.radio_cfg) : '') + '</div>'
+    + '<table class="nb-table"><tr><th>Neighbour</th><th>SNR</th><th>RSSI*</th><th>Path loss (est.)</th><th>Adverts heard</th><th>Last heard</th></tr>'
+    + (nb || '<tr><td colspan="6"><div class="empty-state">No neighbours heard yet. Discovery is passive: a neighbour appears when its zero-hop advert arrives (repeaters advert every few hours by default).</div></td></tr>') + '</table>'
+    + '<div class="config-hint">*RSSI = repeater\'s last-packet RSSI when that neighbour\'s entry refreshed. Path loss = assumed neighbour TX (' + v.assumed_tx_dbm + ' dBm) - RSSI; antenna gains and real TX power unknown, so treat as an estimate.</div>'
+    + '<div class="config-title" style="margin-top:.6rem">Every packet heard (last 20)</div>'
+    + '<table class="nb-table"><tr><th>Time</th><th>RSSI</th><th>SNR</th><th>Pkts</th></tr>' + (hv || '<tr><td colspan="4">none yet</td></tr>') + '</table>';
+}
+
+function rtStart(){
+  const body = {minutes: parseFloat(document.getElementById('rt-min').value),
+                offline: document.getElementById('rt-off').checked,
+                assumed_tx_dbm: parseFloat(document.getElementById('rt-tx').value)};
+  if (body.offline && !confirm('This takes the repeater out of the mesh for ' + body.minutes + ' min. It returns automatically. Continue?')) return;
+  post('/api/rtest/start', body).then(d => { if (!d.ok) setStatus('rt-status', d.error, 'err'); else { setStatus('rt-status', '', ''); rtRender(d); } })
+    .catch(e => setStatus('rt-status', 'Error: ' + e, 'err'));
+}
+function rtStop(){ post('/api/rtest/stop').then(rtRender).catch(() => {}); }
+
+socket.on('rtest_state', rtRender);
+socket.on('rtest_update', rtRender);
+setInterval(() => { if (document.getElementById('rep-card').style.display !== 'none') fetch('/api/rtest/status').then(r => r.json()).then(rtRender).catch(() => {}); }, 5000);
+fetch('/api/rtest/status').then(r => r.json()).then(rtRender).catch(() => {});
