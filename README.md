@@ -152,6 +152,17 @@ the map. Remote antenna gain: a gain field in the directory if present, a figure
 `ANTENNA_GAIN_DBI` overrides, else 0 dBi (assumed). Free space is a best case - real paths only add
 loss. `/api/public/status` shows what the directory returned (count, last error, a sample record).
 
+### Line of sight and antenna orientation planner
+
+Test tab -> *Analyse* (or `POST /api/plan/run`, then `GET /api/plan`). For the nearest public repeaters
+(`PLAN_RADIUS_KM`, `PLAN_MAX_REPEATERS`) it pulls a ground-elevation profile (Open-Meteo, 90 m DEM, cached),
+checks line of sight with 4/3-earth curvature and the first Fresnel zone (clear >= 0.6 F1, marginal, blocked),
+adds knife-edge diffraction loss for obstructions, then sweeps the antenna azimuth 0-355 deg and counts how
+many repeaters stay above receiver sensitivity (from the repeater's SF/BW) plus `PLAN_FADE_MARGIN_DB`.
+It reports the line-of-sight list, how many are reachable at the current azimuth vs the best one, and the best
+arc; the suggested boresight is drawn as a green dotted line on the map. Mast heights are assumptions
+(`LOCAL_MAST_M`, `REMOTE_MAST_M`); buildings and trees are not modelled, so treat it as a planning aid.
+
 ### Duty cycle
 
 Duty cycle is a per-transmitter limit, so every request is budgeted against **both** our

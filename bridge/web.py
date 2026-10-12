@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test, publicdir, publiclinks
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan
 
 
 @app.route("/")
@@ -147,6 +147,16 @@ def api_repeater():
 @app.route("/api/public/links")
 def api_public_links():
     return _guard(publiclinks.links)
+
+
+@app.route("/api/plan")
+def api_plan():
+    return jsonify(siteplan.status())
+
+
+@app.route("/api/plan/run", methods=["POST"])
+def api_plan_run():
+    return _guard(siteplan.run)
 
 
 @app.route("/api/public/status")

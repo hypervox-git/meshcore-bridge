@@ -505,6 +505,9 @@ function drawBeam(loc, d){
     const e = Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
     pts.push(destPoint(loc.lat, loc.lon, a.azimuth_deg + t, far * e));
   }
+  if (window.planBest != null && Math.abs(window.planBest - a.azimuth_deg) > 2)
+    L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, window.planBest, far * 1.1)], {color: '#00e5a0', weight: 2, dashArray: '2 4', interactive: false})
+      .addTo(simLayer).bindTooltip('suggested ' + window.planBest + '\u00b0', {permanent: true, direction: 'top', className: 'link-label'});
   L.polygon(pts, {color: '#5b8def', weight: 1, fillColor: '#5b8def', fillOpacity: .12, interactive: false}).addTo(simLayer);
   L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, a.azimuth_deg, far * 1.1)], {color: '#5b8def', weight: 2, dashArray: '2 4', interactive: false})
     .addTo(simLayer).bindTooltip(a.type + ' ' + a.azimuth_deg + '\u00b0 | ' + a.gain_dbi + ' dBi | F/B ' + a.front_back_db + ' dB', {permanent: true, direction: 'top', className: 'link-label'});
@@ -561,3 +564,49 @@ function loadSim(){
   };
   if (location.hash === '#map') setTimeout(loadSim, 1500);
 })();
+
+// ---- Site planner: line of sight + best antenna orientation ----------------------------
+let planChart = null, planTimer = null;
+window.planBest = null;
+const LOS_COL = {clear: '#00e5a0', marginal: '#ff9500', blocked: '#ff3b3b'};
+
+function planRender(st){
+  const el = document.getElementById('plan-results'), msg = document.getElementById('plan-status');
+  if (st.state === 'running'){ msg.textContent = 'Analysing terrain... ' + (st.progress || ''); return; }
+  if (st.state === 'error'){ setStatus('plan-status', st.error, 'err'); document.getElementById('plan-btn').disabled = false; return; }
+  document.getElementById('plan-btn').disabled = false;
+  const r = st.result; if (!r){ return; }
+  msg.textContent = '';
+  if (planTimer){ clearInterval(planTimer); planTimer = null; }
+  window.planBest = r.best.azimuth_deg;
+  const a = r.local.antenna || {};
+  const rows = r.candidates.map(c => '<tr><td><div class="nb-name">' + escHtml(c.name || c.key.slice(0, 8)) + (c.heard ? ' &#10003; heard' : '') + '</div><div class="nb-id">' + escHtml(c.key.slice(0, 8)) + '</div></td>'
+    + '<td>' + c.distance_km + ' km</td><td>' + c.bearing_deg + '&deg;</td>'
+    + '<td style="color:' + LOS_COL[c.status] + '">' + c.status + (c.terrain_loss_db ? ' (+' + c.terrain_loss_db + ' dB)' : '') + '</td>'
+    + '<td>' + c.pathloss_terrain_db + ' dB</td>'
+    + '<td style="color:' + (c.reach_now ? '#00e5a0' : '#ff3b3b') + '">' + c.rssi_now_dbm + '</td>'
+    + '<td style="color:' + (c.reach_best ? '#00e5a0' : '#ff3b3b') + '">' + c.rssi_best_dbm + '</td></tr>').join('');
+  const arc = r.best.arc ? r.best.arc[0] + '&ndash;' + r.best.arc[1] + '&deg;' : r.best.azimuth_deg + '&deg;';
+  const better = r.best.k - r.current.k > 0.08 && Math.abs(r.best.azimuth_deg - r.current.azimuth_deg) >= 10;
+  el.innerHTML = '<div class="duty-note">' + (a.directional ? escHtml(String(a.type)) + ' ' + a.gain_dbi + ' dBi, F/B ' + a.front_back_db + ' dB. ' : 'Omni antenna. ')
+    + '<b>Now ' + (a.directional ? r.current.azimuth_deg + '&deg;' : 'omni') + ': ' + r.current.reachable + ' of ' + r.candidates.length + ' reachable.</b> '
+    + (a.directional ? (better ? '<b style="color:#00e5a0">Best ' + r.best.azimuth_deg + '&deg; (good arc ' + arc + '): ' + r.best.reachable + ' reachable.</b>' : 'Current orientation is already (near) optimal.') : '')
+    + '<br>Line of sight to ' + r.line_of_sight.length + ' of ' + r.candidates.length + ' repeaters within the radius. Site ground ' + r.site_ground_m + ' m, masts ' + r.mast_m[0] + '/' + r.mast_m[1] + ' m, '
+    + 'sensitivity ' + r.sensitivity_dbm + ' dBm + ' + r.fade_margin_db + ' dB margin, ' + r.tx_dbm + ' dBm TX.</div>'
+    + '<table class="nb-table"><tr><th>Repeater</th><th>Dist</th><th>Bearing</th><th>Line of sight</th><th>Path loss</th><th>RSSI now</th><th>RSSI at best</th></tr>' + rows + '</table>';
+  if (window.Chart){
+    const labels = r.sweep.map(s => s.az), data = r.sweep.map(s => s.score);
+    if (planChart){ planChart.data.labels = labels; planChart.data.datasets[0].data = data; planChart.update('none'); }
+    else planChart = new Chart(document.getElementById('plan-chart'), {type: 'bar', data: {labels, datasets: [{label: 'weighted repeaters reachable', data, backgroundColor: '#5b8def'}]},
+      options: {animation: false, maintainAspectRatio: false, plugins: {legend: {display: true}}, scales: {x: {title: {display: true, text: 'boresight azimuth (deg true)'}}}}});
+  }
+}
+
+function planPoll(){ fetch('/api/plan').then(r => r.json()).then(planRender).catch(() => {}); }
+function planRun(){
+  document.getElementById('plan-btn').disabled = true;
+  setStatus('plan-status', '', '');
+  post('/api/plan/run').then(d => { if (!d.ok){ document.getElementById('plan-btn').disabled = false; setStatus('plan-status', d.error, 'err'); return; }
+    if (planTimer) clearInterval(planTimer); planTimer = setInterval(planPoll, 2000); planPoll(); }).catch(e => setStatus('plan-status', 'Error: ' + e, 'err'));
+}
+planPoll();

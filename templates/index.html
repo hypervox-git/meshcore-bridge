@@ -94,6 +94,14 @@
   <div class="scroll-area"><div class="config-page">
     <div class="warning-box">Test mode transmits. Every request is paced against the duty-cycle limit for <b>both</b> your node and the target, using only a fixed share of the legal limit. Airtime figures are conservative estimates.</div>
 
+    <div class="config-section" id="plan-card">
+      <div class="config-title">Line of sight &amp; antenna orientation planner</div>
+      <div class="config-hint">Which public repeaters Ironhorse can see over the terrain (4/3-earth, Fresnel, 90 m elevation data, assumed mast heights), and which azimuth for a directional antenna reaches the most. A planning aid &mdash; buildings and trees are not modelled.</div>
+      <div class="config-actions"><button class="btn btn-send" id="plan-btn" onclick="planRun()">Analyse</button><span class="send-status" id="plan-status"></span></div>
+      <div id="plan-results"></div>
+      <div class="tm-chart"><canvas id="plan-chart"></canvas></div>
+    </div>
+
     <div class="config-section" id="rep-card" style="display:none">
       <div class="config-title">Local repeater &mdash; live (serial CLI, receive-only)</div>
       <div class="config-hint" id="rep-info"></div>

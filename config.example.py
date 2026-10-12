@@ -70,3 +70,11 @@ RADIO_FREQ_MHZ           = 869.618   # used if the repeater's `get radio` can't 
 # elsewhere, e.g. {"Ironhorse": 6.0, "aabbccdd": 3.0}. Gains found in the directory or in a
 # node name such as "...5dBi" are used automatically.
 ANTENNA_GAIN_DBI         = {}
+
+# --- Site planner (line of sight + antenna orientation) --------------------------------
+LOCAL_MAST_M             = 6      # our antenna height above ground
+REMOTE_MAST_M            = 6      # assumed antenna height at other repeaters
+PLAN_RADIUS_KM           = 60
+PLAN_MAX_REPEATERS       = 30     # nearest N public repeaters analysed (terrain lookups scale with this)
+PLAN_FADE_MARGIN_DB      = 10     # a link counts as reachable above sensitivity + this margin
+PLAN_SENSITIVITY_DBM     = -130   # fallback if the radio settings can't be read from the repeater

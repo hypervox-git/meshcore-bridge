@@ -65,3 +65,50 @@ def half_power_beamwidth_deg(front_back_db):
         return 360.0
     c = (math.sqrt(0.5) * (1 + b) - 1) / b
     return 2 * math.degrees(math.acos(max(-1.0, min(1.0, c))))
+
+
+# ---- terrain / line-of-sight -------------------------------------------------------
+
+def earth_bulge_m(d1_km, d2_km, k=4.0 / 3.0):
+    """Earth bulge (m) at a point d1/d2 km from the two ends, effective-earth-radius factor k."""
+    return d1_km * d2_km / (12.742 * k)
+
+
+def knife_edge_loss_db(v):
+    """ITU-R P.526 single knife-edge diffraction loss approximation (0 dB below v = -0.78)."""
+    if v <= -0.78:
+        return 0.0
+    return 6.9 + 20 * math.log10(math.sqrt((v - 0.1) ** 2 + 1) + v - 0.1)
+
+
+def los_analysis(profile, h_tx_m, h_rx_m, f_mhz):
+    """profile = [(distance_km from TX, ground elevation m), ...] including both ends;
+    h_tx_m / h_rx_m = ANTENNA altitudes (ground + mast). Returns the worst obstruction:
+    clearance as a fraction of the first Fresnel zone, the diffraction loss it implies and a
+    status of clear (>=0.6 F1) / marginal (LOS but <0.6 F1) / blocked (no LOS)."""
+    total = profile[-1][0]
+    lam = 299.792458 / f_mhz
+    worst = {'ratio': 9.9, 'd_km': None, 'v': -9.0}
+    for d, elev in profile[1:-1]:
+        d1, d2 = d, total - d
+        if d1 <= 0 or d2 <= 0:
+            continue
+        line = h_tx_m + (h_rx_m - h_tx_m) * d1 / total
+        clearance = line - (elev + earth_bulge_m(d1, d2))
+        r1 = 17.32 * math.sqrt(d1 * d2 / ((f_mhz / 1000.0) * total))
+        ratio = clearance / r1 if r1 > 0 else 9.9
+        if ratio < worst['ratio']:
+            v = (-clearance) * math.sqrt(2 * (d1 + d2) * 1000.0 / (lam * d1 * 1000.0 * d2 * 1000.0))
+            worst = {'ratio': ratio, 'd_km': d, 'v': v}
+    ratio = worst['ratio']
+    status = 'clear' if ratio >= 0.6 else 'marginal' if ratio >= 0 else 'blocked'
+    return {'status': status, 'clearance_f1': round(min(ratio, 9.9), 2), 'worst_km': worst['d_km'],
+            'terrain_loss_db': round(min(knife_edge_loss_db(worst['v']), 60.0), 1)}
+
+
+_SNR_LIMIT = {7: -7.5, 8: -10.0, 9: -12.5, 10: -15.0, 11: -17.5, 12: -20.0}
+
+
+def lora_sensitivity_dbm(bw_khz, sf, noise_figure_db=6.0):
+    """Receiver sensitivity: -174 + 10log10(BW) + NF + SNR limit for the spreading factor."""
+    return -174 + 10 * math.log10(bw_khz * 1000.0) + noise_figure_db + _SNR_LIMIT.get(int(sf), -10.0)
