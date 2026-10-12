@@ -10,6 +10,7 @@
 # access below is defensive (_g helper). Set MESHCORE_DEBUG=True in config to log
 # raw event payloads and confirm the mapping against your node, then tighten.
 import asyncio
+import os
 import threading
 import time
 
@@ -30,6 +31,9 @@ from bridge.history import record_position_history
 
 _loop = None          # the asyncio loop (own thread)
 mc = None             # MeshCore instance
+_gone = None          # asyncio.Event: set when a connected link has been lost for good
+RETRY_MIN = 5         # s, first reconnect delay (doubles on repeated failure)
+RETRY_MAX = 60
 
 
 # ---- helpers -----------------------------------------------------------------
@@ -53,7 +57,14 @@ def _node_id(payload):
 
 def _emit_status():
     socketio.emit('status', {'serial': state.serial_connected,
-                             'mqtt': state.mqtt_connected}, namespace='/')
+                             'mqtt': state.mqtt_connected,
+                             'error': state.last_serial_error[0]}, namespace='/')
+
+
+def _set_connected(ok, reason=None):
+    state.serial_connected = ok
+    state.last_serial_error[0] = None if ok else reason
+    _emit_status()
 
 
 def _publish_node(nid, name=None, snr=None, battery=None, lat=None, lon=None, hw=None):
@@ -167,8 +178,18 @@ def _on_contact(event):
 
 
 def _on_disconnect(event):
-    state.serial_connected = False
-    _emit_status()
+    """The library emits this only after it has given up reconnecting."""
+    p = event.payload if isinstance(getattr(event, 'payload', None), dict) else {}
+    _set_connected(False, f"link lost ({p.get('reason') or 'disconnected'})")
+    if _gone is not None:
+        _gone.set()
+
+
+def _on_connected(event):
+    p = event.payload if isinstance(getattr(event, 'payload', None), dict) else {}
+    if p.get('reconnected'):                 # library-level auto-reconnect succeeded
+        _set_connected(True)
+        print("[meshcore] link restored.")
 
 
 # ---- contact ingest ----------------------------------------------------------
@@ -188,13 +209,21 @@ def _ingest_contacts():
 
 # ---- async loop --------------------------------------------------------------
 
-async def _connect_and_run():
+async def _connect_once():
+    """One connection attempt. Raises with a human-readable reason on failure."""
     global mc
+    if not os.path.exists(SERIAL_PORT):
+        raise RuntimeError(f"serial port {SERIAL_PORT} not present (node unplugged or re-enumerated? "
+                           "check `ls -l /dev/serial/by-id/` and SERIAL_PORT in config.py)")
     print(f"[meshcore] connecting serial {SERIAL_PORT} ...")
-    mc = await MeshCore.create_serial(SERIAL_PORT, BAUD_RATE, auto_reconnect=True)
+    # NB: create_serial() returns None (it does not raise) when the node doesn't answer.
+    new = await MeshCore.create_serial(SERIAL_PORT, BAUD_RATE, auto_reconnect=True,
+                                       max_reconnect_attempts=10)
+    if new is None:
+        raise RuntimeError(f"no response from the node on {SERIAL_PORT} - port busy (another "
+                           "process using it?) or not flashed as a SERIAL companion")
+    mc = new
     iface_ref[0] = mc
-    state.serial_connected = True
-    _emit_status()
     # a single 'channels' emit gives the UI a channel-0 chat tab for sending
     socketio.emit('channels', [{'index': 0, 'name': 'public', 'role': 'PRIMARY',
                                'psk_type': 'meshcore'}], namespace='/')
@@ -208,6 +237,7 @@ async def _connect_and_run():
     mc.subscribe(EventType.TELEMETRY_RESPONSE, _on_telemetry)
     mc.subscribe(EventType.BATTERY, _on_battery)
     mc.subscribe(EventType.DISCONNECTED, _on_disconnect)
+    mc.subscribe(EventType.CONNECTED, _on_connected)
 
     try:
         await mc.ensure_contacts()
@@ -218,19 +248,43 @@ async def _connect_and_run():
         await mc.start_auto_message_fetching()
     except Exception as e:
         print(f"[meshcore] auto message fetch: {e}")
-    print("[meshcore] connected.")
+    _set_connected(True)
+
+
+async def _supervise():
+    """Connect, and keep reconnecting - at start-up and after the link is lost for good
+    (e.g. the node was unplugged or USB power-cycled longer than the library retries)."""
+    global _gone
+    _gone = asyncio.Event()
+    delay = RETRY_MIN
+    while True:
+        _gone.clear()
+        try:
+            await _connect_once()
+            delay = RETRY_MIN
+            print("[meshcore] connected.")
+            await _gone.wait()
+            print(f"[meshcore] link lost - reconnecting in {delay}s ...")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            _set_connected(False, str(e))
+            print(f"[meshcore] connect failed: {e} - retrying in {delay}s")
+            delay = min(delay * 2, RETRY_MAX)
+        old = mc
+        if old is not None:
+            try:
+                await old.disconnect()
+            except Exception:
+                pass
+        await asyncio.sleep(delay)
 
 
 def _run_loop():
     global _loop
     _loop = asyncio.new_event_loop()
     asyncio.set_event_loop(_loop)
-    try:
-        _loop.run_until_complete(_connect_and_run())
-    except Exception as e:
-        state.serial_connected = False
-        _emit_status()
-        print(f"[meshcore] connect failed: {e}")
+    _loop.create_task(_supervise())
     _loop.run_forever()
 
 

@@ -61,7 +61,9 @@ def _emit(event, data):
 
 def _require_connected():
     if io.mc is None or not state.serial_connected:
-        raise RuntimeError('MeshCore node not connected')
+        why = state.last_serial_error[0]
+        raise RuntimeError('MeshCore node not connected' + (f': {why}' if why else
+                           ' (still connecting - see the service log if this persists)'))
 
 
 def radio_params():
