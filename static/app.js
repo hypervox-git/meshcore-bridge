@@ -83,6 +83,17 @@ socket.on('packet',(data)=>{
 socket.on('channels',(data)=>{channelMap={};data.forEach(ch=>{channelMap[ch.index]=ch;});buildChannelPages(data);renderChannelList(data);});
 socket.on('local_node',(data)=>{localNodeId=data.id;});
 socket.on('aliases',(data)=>{Object.assign(aliases,data);renderNodes();});
+socket.on('node_link',(d)=>{
+  if(!nodes[d.id]) nodes[d.id]={id:d.id,packets:0};
+  const n=nodes[d.id];
+  if(d.name&&!n.name) n.name=d.name;
+  if(d.rssi!=null) n.rssi=d.rssi;
+  if(d.snr!=null) n.snr=parseFloat(d.snr).toFixed(1);
+  if(d.pathloss!=null) n.pathloss=d.pathloss;
+  if(d.lat!=null&&d.lon!=null){n.lat=d.lat;n.lon=d.lon;}
+  n.linkTs=d.linkTs;n.lastSeenTs=d.linkTs*1000;
+  renderNodes();
+});
 socket.on('nodedb_flushed',()=>{
   Object.keys(nodes).forEach(k=>delete nodes[k]);
   if(leafletMap){Object.values(mapMarkers).forEach(m=>{try{leafletMap.removeLayer(m);}catch(e){}});Object.keys(mapMarkers).forEach(k=>delete mapMarkers[k]);}
@@ -108,6 +119,7 @@ function showPage(name){
 let leafletMap=null;
 const mapMarkers={};
 let gatewayMarker=null;
+let linkLayer=null;
 let mapTimer=null;
 
 function initMap(){
@@ -124,11 +136,32 @@ function popupHtml(n,label){
   return '<b>'+escHtml(label)+'</b><br>'+n.id
     +(n.rssi?'<br>RSSI '+n.rssi+' dBm':'')
     +(n.snr?'<br>SNR '+n.snr+' dB':'')
+    +(n.pathloss!=null?'<br>Path loss ~'+n.pathloss+' dB':'')
     +(n.battery!==undefined?'<br>Bat '+n.battery+'%':'');
+}
+
+function linkColour(snr){return snr==null?'#4a5568':snr>=5?'#00e5a0':snr>=0?'#ff9500':'#ff3b3b';}
+
+function renderLinks(){
+  // Lines gateway -> nodes measured by the repeater test (heard within the last hour),
+  // coloured by SNR and labelled with the estimated path loss.
+  if(!leafletMap) return;
+  if(linkLayer) linkLayer.remove();
+  linkLayer=L.layerGroup().addTo(leafletMap);
+  if(!GATEWAY_LAT&&!GATEWAY_LON) return;
+  const now=Date.now()/1000;
+  Object.values(nodes).forEach(n=>{
+    if(!n.linkTs||now-n.linkTs>3600||!n.lat||!n.lon) return;
+    const snr=n.snr!=null?parseFloat(n.snr):null;
+    const line=L.polyline([[GATEWAY_LAT,GATEWAY_LON],[n.lat,n.lon]],{color:linkColour(snr),weight:3,opacity:.85}).addTo(linkLayer);
+    const lbl=(n.pathloss!=null?'PL ~'+n.pathloss+' dB':'')+(snr!=null?(n.pathloss!=null?' | ':'')+'SNR '+snr+' dB':'');
+    if(lbl) line.bindTooltip(lbl,{permanent:true,direction:'center',className:'link-label'});
+  });
 }
 
 function renderMap(){
   if(!leafletMap) return;
+  renderLinks();
   Object.values(nodes).forEach(n=>{
     if(n.id===localNodeId||!n.lat||!n.lon) return;
     const label=aliases[n.id]||n.name||n.id;
@@ -157,6 +190,9 @@ function refreshMapData(){
         n.lat=node.position.latitudeI/1e7;n.lon=node.position.longitudeI/1e7;
       }
       if(node.snr) n.snr=parseFloat(node.snr).toFixed(1);
+      if(node.rssi!==undefined) n.rssi=node.rssi;
+      if(node.pathloss!==undefined) n.pathloss=node.pathloss;
+      if(node.linkTs) n.linkTs=node.linkTs;
       if(node.deviceMetrics&&node.deviceMetrics.batteryLevel!==undefined) n.battery=node.deviceMetrics.batteryLevel;
       if(node.lastHeard) n.lastSeenTs=node.lastHeard*1000;
     });
@@ -482,6 +518,7 @@ function renderNodes(){
       +(n.voltage?'<div class="node-row"><span class="node-row-label">Voltage</span><span>'+n.voltage+'V</span></div>':'')
       +(n.rssi?'<div class="node-row"><span class="node-row-label">RSSI</span><span class="'+rssiClass(n.rssi)+'">'+n.rssi+' dBm</span></div>':'')
       +(n.snr?'<div class="node-row"><span class="node-row-label">SNR</span><span>'+n.snr+' dB</span></div>':'')
+      +(n.pathloss!=null?'<div class="node-row"><span class="node-row-label">Path loss</span><span>~'+n.pathloss+' dB</span></div>':'')
       +(n.lat?'<div class="node-row"><span class="node-row-label">Lat</span><span>'+n.lat.toFixed(5)+'</span></div>':'')
       +(n.lon?'<div class="node-row"><span class="node-row-label">Lon</span><span>'+n.lon.toFixed(5)+'</span></div>':'')
       +(n.chanUtil!==undefined?'<div class="node-row"><span class="node-row-label">Chan util</span><span>'+n.chanUtil+'%</span></div>':'')
@@ -748,6 +785,9 @@ function loadNodes(){
       const dm=node.deviceMetrics;
       if(dm){if(dm.batteryLevel!==undefined) n.battery=dm.batteryLevel;if(dm.voltage) n.voltage=parseFloat(dm.voltage).toFixed(2);if(dm.channelUtilization!==undefined) n.chanUtil=parseFloat(dm.channelUtilization).toFixed(1);if(dm.airUtilTx!==undefined) n.airUtil=parseFloat(dm.airUtilTx).toFixed(2);if(dm.uptimeSeconds) n.uptime=formatUptime(dm.uptimeSeconds);}
       if(node.snr) n.snr=parseFloat(node.snr).toFixed(1);
+      if(node.rssi!==undefined) n.rssi=node.rssi;
+      if(node.pathloss!==undefined) n.pathloss=node.pathloss;
+      if(node.linkTs) n.linkTs=node.linkTs;
       if(node.hopsAway!==undefined) n.hops=node.hopsAway;
       if(node.lastHeard){n.lastSeenTs=node.lastHeard*1000;n.lastSeen=new Date(node.lastHeard*1000).toLocaleTimeString('en-GB',{hour12:false,hour:'2-digit',minute:'2-digit'});}
       if(node.position&&node.position.latitudeI&&node.position.longitudeI){n.lat=node.position.latitudeI/1e7;n.lon=node.position.longitudeI/1e7;}

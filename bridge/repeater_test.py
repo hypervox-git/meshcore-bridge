@@ -30,7 +30,8 @@ import sys
 import threading
 import time
 
-from bridge import state, repeater_cli as cli
+from bridge import state, repeater_cli as cli, mqtt_bridge
+from bridge.state import node_db, update_node_db
 from bridge.extensions import socketio
 
 try:
@@ -228,6 +229,54 @@ def discover():
     return {'ok': True, 'discover': res}
 
 
+def resolve_node(hex_id):
+    """Map a neighbour's pubkey prefix to a node_db key ('!aabbccdd'); None if unknown."""
+    h = str(hex_id).lower().strip()
+    if len(h) < 2:
+        return None
+    for k in node_db:
+        kk = k.lstrip('!').lower()
+        if kk and (kk.startswith(h) or h.startswith(kk)):
+            return k
+    return None
+
+
+def _publish_link(n, s):
+    """Push a neighbour's measured link into node_db / dashboard / map / MQTT."""
+    h = n['id'].lower()
+    key = n.get('key') or resolve_node(h)
+    known = key is not None
+    if key is None:
+        key = '!' + h[:8]
+    n['key'] = key
+    pl = (round(s['assumed_tx_dbm'] - n['rssi'], 1) if n['rssi'] is not None else None)
+    entry = {'linkTs': int(time.time()), 'linkHeard': n['heard']}
+    if n['rssi'] is not None:
+        entry['rssi'] = n['rssi']
+    if n['snr'] is not None:
+        entry['snr'] = n['snr']
+    if pl is not None:
+        entry['pathloss'] = pl
+        entry['pathloss_tx_dbm'] = s['assumed_tx_dbm']
+    if key not in node_db:
+        entry['name'] = 'repeater ' + h[:8]
+    update_node_db(key, entry)
+    n['known'] = known
+    nd = node_db.get(key, {})
+    n['name'] = nd.get('name')
+    n['lat'], n['lon'] = nd.get('lat'), nd.get('lon')
+    _emit('node_link', {'id': key, 'name': nd.get('name'), 'rssi': nd.get('rssi'), 'snr': nd.get('snr'),
+                        'pathloss': nd.get('pathloss'), 'lat': nd.get('lat'), 'lon': nd.get('lon'),
+                        'linkTs': entry['linkTs']})
+    try:
+        mqtt_bridge.publish_ha_discovery(key, nd.get('name'))
+        for k, v in (('rssi', n['rssi']), ('snr', n['snr']), ('pathloss', pl)):
+            if v is not None:
+                mqtt_bridge.publish_ha_state(key, k, v)
+    except Exception as e:                                   # MQTT is best-effort
+        print(f"[rtest] mqtt publish: {e}")
+
+
 def _new_session(minutes, offline, assumed_tx):
     return {'running': True, 'start': time.time(), 'deadline': time.time() + minutes * 60,
             'minutes': minutes, 'offline': offline, 'prev_repeat': None, 'reason': None,
@@ -384,6 +433,10 @@ def on_sample(snap):
             n['heard'] += 1
             n['last'] = now
             n['rssi'] = radio.get('last_rssi')          # RSSI of the advert that refreshed it
+        sig = (n['heard'], n['snr'])
+        if sig != n.get('sig'):                          # only on change (node_db writes to disk)
+            n['sig'] = sig
+            _publish_link(n, s)
     _emit('rtest_update', view())
 
 
@@ -399,6 +452,7 @@ def view():
     for n in s['nb'].values():
         d = dict(n)
         d['pathloss_db'] = (round(s['assumed_tx_dbm'] - n['rssi'], 1) if n['rssi'] is not None else None)
+        d.pop('sig', None)
         nbs.append(d)
     nbs.sort(key=lambda d: (d['snr'] is None, -(d['snr'] or 0)))
     return {'running': s['running'], 'offline': s['offline'], 'minutes': s['minutes'],

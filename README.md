@@ -127,6 +127,9 @@ is acted on at the next connect; restore retries until `get repeat` confirms). `
 stored in the repeater's flash, so if the *Pi itself* loses power mid-test, send `set repeat on`.
 Discovery: the test sends `discover.neighbors` at start (and via *Discover now*) when the firmware has it; otherwise it is **passive** (a neighbour
 shows up when its zero-hop advert is heard) - use a Companion-USB node for active discovery.
+Results are also pushed to the **Dashboard** (RSSI / SNR / path loss on each node card; unknown neighbours are
+listed as `repeater <id>`), the **Map** (lines from `GATEWAY_LAT/LON` to each located neighbour, coloured
+by SNR and labelled with path loss; shown for an hour) and MQTT (`rssi`, `snr`, `pathloss` sensors).
 Path loss = assumed neighbour TX power (`ASSUMED_NEIGHBOUR_TX_DBM`) - measured RSSI, so it is
 an estimate. Discovery, traceroute and remote
 polling need a Companion-USB node (`SERIAL_MODE = "companion"`, the default).

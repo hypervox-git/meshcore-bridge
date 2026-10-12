@@ -130,3 +130,23 @@ def test_discover_unknown_command(rep, monkeypatch):
     assert rt._t['running']                           # test still runs, passively
     with pytest.raises(RuntimeError, match='rate-limited'):
         rt.discover()
+
+
+def test_link_published_to_node_db(rep, monkeypatch):
+    emitted = []
+    monkeypatch.setattr(rt, '_emit', lambda e, d: emitted.append((e, d)))
+    monkeypatch.setattr(rt, 'update_node_db', lambda k, e: rt.node_db.setdefault(k, {}).update(e))
+    rt.node_db.clear()
+    rt.node_db['!aabbccdd'] = {'name': 'Hill repeater', 'lat': 51.3, 'lon': -2.9}
+    rt.start(minutes=5, offline=False, assumed_tx_dbm=20)
+    snap = lambda age, rssi: {'radio': {'last_rssi': rssi, 'last_snr': 5.0, 'noise_floor': -115}, 'packets': {'recv': 5},
+                              'neighbours': [{'id': 'AABBCCDD', 'age_s': str(age), 'snr': '22'},
+                                             {'id': '11223344', 'age_s': str(age), 'snr': '-8'}]}
+    rt.on_sample(snap(1, -97))
+    assert rt.node_db['!aabbccdd']['pathloss'] == 117.0 and rt.node_db['!aabbccdd']['rssi'] == -97
+    assert rt.node_db['!11223344']['name'].startswith('repeater 11223344')   # unknown node still listed
+    links = [d for e, d in emitted if e == 'node_link']
+    assert any(d['id'] == '!aabbccdd' and d['lat'] == 51.3 and d['pathloss'] == 117.0 for d in links)
+    nb = {n['id']: n for n in rt.view()['neighbours']}
+    assert nb['AABBCCDD']['name'] == 'Hill repeater' and nb['AABBCCDD']['known'] is True
+    n0 = len(links); rt.on_sample(snap(2, -97)); assert len([1 for e, d in emitted if e == 'node_link']) == n0  # no churn

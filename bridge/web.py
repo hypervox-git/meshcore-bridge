@@ -38,6 +38,9 @@ def api_nodes():
         if n.get("lat") is not None and n.get("lon") is not None:
             node["position"] = {"latitudeI": int(n["lat"] * 1e7),
                                 "longitudeI": int(n["lon"] * 1e7)}
+        for k in ("rssi", "pathloss", "pathloss_tx_dbm", "linkTs"):
+            if n.get(k) is not None:
+                node[k] = n[k]
         dm = {}
         if n.get("battery") is not None:
             dm["batteryLevel"] = n["battery"]

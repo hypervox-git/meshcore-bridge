@@ -398,7 +398,7 @@ function rtRender(v){
   }
   const el = document.getElementById('rt-results');
   if (!v.neighbours && !v.heard){ el.innerHTML = ''; return; }
-  const nb = (v.neighbours || []).map(n => '<tr><td><div class="nb-id">' + escHtml(n.id) + '</div></td>'
+  const nb = (v.neighbours || []).map(n => '<tr><td><div class="nb-name">' + escHtml(n.name || (n.known === false ? 'unknown node' : '')) + '</div><div class="nb-id">' + escHtml(n.id) + '</div></td>'
     + '<td style="color:' + snrColor(n.snr) + '">' + fmt(n.snr, ' dB', 2) + '</td><td>' + fmt(n.rssi, ' dBm', 0) + '</td>'
     + '<td>' + fmt(n.pathloss_db, ' dB', 1) + '</td><td>' + n.heard + '</td><td>' + (n.age == null ? '-' : Math.round(n.age) + ' s') + '</td></tr>').join('');
   const hv = (v.heard || []).slice().reverse().map(h => '<tr><td>' + new Date(h.ts * 1000).toLocaleTimeString('en-GB', {hour12: false})

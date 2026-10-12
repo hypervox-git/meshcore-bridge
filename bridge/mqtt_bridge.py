@@ -54,6 +54,7 @@ def publish_ha_discovery(node_id, name):
         ("battery", "Battery", "%",   "battery",         "measurement"),
         ("rssi",    "RSSI",    "dBm", "signal_strength",  "measurement"),
         ("snr",     "SNR",     "dB",  None,               "measurement"),
+        ("pathloss","Path loss","dB", None,               "measurement"),
         ("health",  "Health",  "%",   None,               "measurement"),
         ("latitude", "Latitude",  "\u00b0", None, None),
         ("longitude","Longitude", "\u00b0", None, None),
