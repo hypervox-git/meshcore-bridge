@@ -30,7 +30,7 @@ import sys
 import threading
 import time
 
-from bridge import state, repeater_cli as cli, mqtt_bridge
+from bridge import state, repeater_cli as cli, mqtt_bridge, publicdir
 from bridge.state import node_db, update_node_db
 from bridge.extensions import socketio
 
@@ -243,7 +243,13 @@ def _publish_link(n, s):
     if pl is not None:
         entry['pathloss'] = pl
         entry['pathloss_tx_dbm'] = s['assumed_tx_dbm']
-    if key not in node_db:
+    pub = publicdir.lookup(h)
+    nd0 = node_db.get(key, {})
+    if pub and nd0.get('lat') is None:                        # place it at its published location
+        entry.update(lat=pub['lat'], lon=pub['lon'], loc_src='public directory')
+        if not nd0.get('name') or nd0.get('synthetic'):
+            entry.update(name=pub['name'] or ('repeater ' + h[:8]), synthetic=False)
+    elif key not in node_db:
         entry['name'] = 'repeater ' + h[:8]
         entry['synthetic'] = True
     update_node_db(key, entry)

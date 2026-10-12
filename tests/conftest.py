@@ -12,3 +12,14 @@ if importlib.util.find_spec('config') is None:
     spec.loader.exec_module(mod)
     mod.GATEWAY_LAT, mod.GATEWAY_LON = 51.0, -2.9
     sys.modules['config'] = mod
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_public_directory():
+    from bridge import publicdir
+    yield
+    publicdir._nodes.clear()
+    publicdir.FILE = None

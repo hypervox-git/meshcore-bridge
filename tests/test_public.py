@@ -1,0 +1,70 @@
+import json
+import pytest
+from bridge import linkmodel, publicdir, publiclinks, repeater_cli as cli, state
+
+
+def test_fspl_known_value():
+    # 10 km @ 869.618 MHz: 20 + 58.79 + 32.44 = 111.2 dB
+    assert linkmodel.fspl_db(10, 869.618) == pytest.approx(111.2, abs=0.1)
+    s = linkmodel.simulate(10, 869.618, 20, 2.0, 6.0)
+    assert s['pathloss_db'] == pytest.approx(103.2, abs=0.1) and s['rssi_dbm'] == pytest.approx(-83.2, abs=0.1)
+
+
+def test_haversine():
+    assert linkmodel.haversine_km(51.0, -2.0, 51.0, -1.0) == pytest.approx(70.0, abs=1.0)
+
+
+def dirfile(tmp_path, monkeypatch, recs):
+    f = tmp_path / 'pub.json'; f.write_text(json.dumps(recs))
+    monkeypatch.setattr(publicdir, 'FILE', str(f))
+    publicdir._nodes.clear()
+    return publicdir.refresh()
+
+
+RECS = [
+    {'public_key': 'AABBCCDD' + '00' * 28, 'adv_name': 'Ironhorse', 'adv_lat': 51.30, 'adv_lon': -2.90, 'type': 2},
+    {'public_key': '99887766' + '00' * 28, 'adv_name': 'Mendip RPT 6dBi', 'adv_lat': 51.35, 'adv_lon': -2.75, 'type': 2},
+    {'public_key': '11223344' + '00' * 28, 'adv_name': 'Far one', 'adv_lat': 55.0, 'adv_lon': -3.0, 'type': 2},
+    {'public_key': '55667788' + '00' * 28, 'adv_name': 'Some client', 'adv_lat': 51.31, 'adv_lon': -2.91, 'type': 1},
+    {'public_key': 'deadbeef' + '00' * 28, 'adv_name': 'No position'},
+]
+
+
+def test_directory_parsing(tmp_path, monkeypatch):
+    assert dirfile(tmp_path, monkeypatch, RECS) == 4                     # record without position dropped
+    r = publicdir.lookup('99887766')
+    assert r['gain_dbi'] == 6.0 and r['gain_src'] == 'name' and r['type'] == 'repeater'
+    assert publicdir.find_by_name('ironhorse')['key'].startswith('aabbccdd')
+    near = publicdir.nearby(51.30, -2.90, 40, 'repeater', exclude_keys={RECS[0]['public_key'].lower()})
+    assert [r['name'] for d, r in near] == ['Mendip RPT 6dBi']           # not the far one, not the client
+
+
+def test_gain_override(tmp_path, monkeypatch):
+    dirfile(tmp_path, monkeypatch, RECS)
+    monkeypatch.setattr(publicdir, '_c', lambda n, d: {'ANTENNA_GAIN_DBI': {'Ironhorse': 5.0}}.get(n, d))
+    assert publicdir.override_gain(publicdir.find_by_name('Ironhorse')) == (5.0, 'override')
+    assert publicdir.override_gain(publicdir.lookup('99887766')) == (6.0, 'name')
+    assert publicdir.override_gain(publicdir.lookup('11223344')) == (0.0, 'assumed')
+
+
+def test_links_local_from_directory_and_items(tmp_path, monkeypatch):
+    dirfile(tmp_path, monkeypatch, RECS)
+    cli.latest.update(name='Ironhorse', radio_cfg='869.618,62.5,8,8', neighbours=[
+        {'id': '99887766', 'age_s': '5', 'snr': '16', 'snr_db': 4.0, 'raw': 'x', 'key': None, 'name': None, 'lat': None, 'lon': None}])
+    monkeypatch.setattr(publiclinks, '_c', lambda n, d: {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0}.get(n, d))
+    out = publiclinks.links()
+    assert out['local']['source'] == 'public directory' and out['local']['lat'] == 51.30
+    assert out['freq_mhz'] == 869.618
+    it = out['items'][0]
+    assert it['source'] == 'discovered' and it['name'] == 'Mendip RPT 6dBi' and it['gain_remote_dbi'] == 6.0
+    d = it['distance_km']; assert 10 < d < 14
+    assert it['pathloss_db'] == pytest.approx(it['fspl_db'] - 6.0, abs=0.05)
+    assert it['rssi_dbm'] == pytest.approx(20 - it['pathloss_db'], abs=0.05)
+    assert all(i['key'][:8] != '99887766' for i in out['items'][1:])     # not duplicated as "public"
+
+
+def test_unknown_position_gives_note(tmp_path, monkeypatch):
+    dirfile(tmp_path, monkeypatch, RECS)
+    cli.latest.update(name=None)
+    monkeypatch.setattr(publiclinks, '_c', lambda n, d: {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'LOCAL_NAME': None}.get(n, d))
+    assert 'position unknown' in publiclinks.links()['note']

@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks
 
 
 @app.route("/")
@@ -142,6 +142,21 @@ def api_repeater():
     if getattr(config, "SERIAL_MODE", "companion") != "repeater":
         return jsonify({"mode": "companion"})
     return jsonify(repeater_cli.snapshot())
+
+
+@app.route("/api/public/links")
+def api_public_links():
+    return _guard(publiclinks.links)
+
+
+@app.route("/api/public/status")
+def api_public_status():
+    return jsonify(publicdir.status())
+
+
+@app.route("/api/public/refresh", methods=["POST"])
+def api_public_refresh():
+    return _guard(lambda: {"ok": True, "count": publicdir.refresh(force=True), "status": publicdir.status()})
 
 
 @app.route("/api/rtest/status")

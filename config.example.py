@@ -51,3 +51,18 @@ REP_TEST_SAMPLE          = 1.0    # s between polls while a test runs (serial on
 ASSUMED_NEIGHBOUR_TX_DBM = 20     # neighbour TX power used for the path-loss ESTIMATE
 REP_RESTORE_FILE         = "meshcore_repeater_restore.json"   # crash-safety marker (git-ignored)
 REP_TEST_DISCOVER         = True   # send `discover.neighbors` when a test starts (if the firmware has it)
+
+# --- Public repeater directory + simulated links (map) ---------------------------------
+LOCAL_NAME               = None   # our repeater's public name (e.g. "Ironhorse"); None = ask the repeater (`get name`)
+LOCAL_ANTENNA_GAIN_DBI   = None   # our antenna gain; None = from directory/name, else 0
+SIM_TX_DBM               = 20     # assumed TX power at both ends for the simulated link
+PUBLIC_NODES_URL         = "https://map.meshcore.io/api/v1/nodes"   # community map node list (JSON)
+PUBLIC_NODES_FILE        = None   # or a local JSON file in the same shape (offline / manual)
+PUBLIC_RADIUS_KM         = 40     # show public repeaters within this distance of us
+PUBLIC_MAX_NEARBY        = 12     # ...at most this many (nearest first)
+PUBLIC_REFRESH_HOURS     = 24
+RADIO_FREQ_MHZ           = 869.618   # used if the repeater's `get radio` can't be read
+# Antenna gain for specific repeaters (name or public-key prefix) when it is published
+# elsewhere, e.g. {"Ironhorse": 6.0, "aabbccdd": 3.0}. Gains found in the directory or in a
+# node name such as "...5dBi" are used automatically.
+ANTENNA_GAIN_DBI         = {}

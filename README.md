@@ -134,6 +134,22 @@ Path loss = assumed neighbour TX power (`ASSUMED_NEIGHBOUR_TX_DBM`) - measured R
 an estimate. Discovery, traceroute and remote
 polling need a Companion-USB node (`SERIAL_MODE = "companion"`, the default).
 
+### Public repeaters and simulated links (map)
+
+The bridge loads the community MeshCore node list (`PUBLIC_NODES_URL`, cached in a git-ignored JSON,
+refreshed daily; or point `PUBLIC_NODES_FILE` at your own JSON) and uses it to
+- place **our repeater** at its known position (`LOCAL_NAME`, or the name the repeater reports via
+  `get name`; `GATEWAY_LAT/LON` win if set),
+- place **heard neighbours** at their published positions (and name them), and
+- show the nearest **public repeaters** (`PUBLIC_RADIUS_KM`, `PUBLIC_MAX_NEARBY`) on the Map tab.
+
+Each gets a simulated free-space link from us: `FSPL = 20log10(d km) + 20log10(f MHz) + 32.44`,
+path loss = FSPL - antenna gains, predicted RSSI = `SIM_TX_DBM` (20) - path loss. Heard neighbours are
+solid lines (also showing measured path loss and the excess over free space), public ones dashed.
+Antenna gain: a gain field in the directory if present, a figure like `6dBi` in the node name, else your
+`ANTENNA_GAIN_DBI` overrides, else 0 dBi (assumed). Free space is a best case - real paths only add
+loss. `/api/public/status` shows what the directory returned (count, last error, a sample record).
+
 ### Duty cycle
 
 Duty cycle is a per-transmitter limit, so every request is budgeted against **both** our

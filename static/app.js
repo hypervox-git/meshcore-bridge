@@ -15,8 +15,8 @@ const aliases = {};
 const geoCache = {};
 const allLogEntries = [];
 
-const GATEWAY_LAT = window.BRIDGE_CONFIG.gatewayLat;
-const GATEWAY_LON = window.BRIDGE_CONFIG.gatewayLon;
+let GATEWAY_LAT = window.BRIDGE_CONFIG.gatewayLat;
+let GATEWAY_LON = window.BRIDGE_CONFIG.gatewayLon;
 const TRAIL_MAX   = window.BRIDGE_CONFIG.trailMax;
 
 const MODEM_PRESETS = {0:'LONG_FAST',1:'LONG_SLOW',2:'VERY_LONG_SLOW',3:'MEDIUM_SLOW',4:'MEDIUM_FAST',5:'SHORT_SLOW',6:'SHORT_FAST',7:'LONG_MODERATE'};
@@ -154,7 +154,7 @@ function renderLinks(){
   if(!GATEWAY_LAT&&!GATEWAY_LON) return;
   const now=Date.now()/1000;
   Object.values(nodes).forEach(n=>{
-    if(!n.linkTs||now-n.linkTs>3600||!n.lat||!n.lon) return;
+    if(!n.linkTs||now-n.linkTs>3600||!n.lat||!n.lon||(window.simKeys&&window.simKeys.has(n.id))) return;
     const snr=n.snr!=null?parseFloat(n.snr):null;
     const line=L.polyline([[GATEWAY_LAT,GATEWAY_LON],[n.lat,n.lon]],{color:linkColour(snr),weight:3,opacity:.85}).addTo(linkLayer);
     const lbl=(n.pathloss!=null?'PL ~'+n.pathloss+' dB':'')+(snr!=null?(n.pathloss!=null?' | ':'')+'SNR '+snr+' dB':'');

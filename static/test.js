@@ -471,3 +471,70 @@ function repDiscover(){
 }
 
 setInterval(() => { try { if (window.repGwPopup && typeof gatewayMarker !== 'undefined' && gatewayMarker) gatewayMarker.setPopupContent(window.repGwPopup); } catch (e) {} }, 2000);
+
+// ---- Map: public repeaters at their known positions + simulated link lines --------------
+let simLayer = null, simTimer = null;
+window.simKeys = new Set();
+function simColour(rssi){ return rssi >= -100 ? '#00e5a0' : rssi >= -115 ? '#ff9500' : '#ff3b3b'; }
+
+function simPopup(it, loc){
+  const m = it.measured || {};
+  return '<b>' + escHtml(it.name || it.key.slice(0, 8)) + '</b> (' + (it.source === 'discovered' ? 'heard by us' : 'public directory') + ')<br>' + escHtml(it.key.slice(0, 8))
+    + '<br>Distance ' + it.distance_km + ' km @ ' + it.freq_mhz + ' MHz'
+    + '<br>Free-space loss ' + it.fspl_db + ' dB'
+    + '<br>Antenna gain: ' + (loc.gain_dbi || 0) + ' dBi here + ' + it.gain_remote_dbi + ' dBi there (' + escHtml(it.gain_src) + ')'
+    + '<br><b>Simulated path loss ' + it.pathloss_db + ' dB</b> &rarr; ' + it.rssi_dbm + ' dBm at ' + it.tx_dbm + ' dBm TX'
+    + (m.pathloss_db != null ? '<br>Measured path loss ~' + m.pathloss_db + ' dB (' + (it.excess_db >= 0 ? '+' : '') + it.excess_db + ' dB vs free space)' : '')
+    + (m.snr != null ? '<br>SNR ' + m.snr + ' dB' : '');
+}
+
+function drawSim(d){
+  if (!leafletMap || typeof L === 'undefined') return;
+  if (simLayer){ simLayer.remove(); simLayer = null; }
+  window.simKeys = new Set();
+  const info = document.getElementById('sim-info');
+  const loc = d.local || {};
+  if (loc.lat != null && loc.lon != null){
+    GATEWAY_LAT = loc.lat; GATEWAY_LON = loc.lon;
+    if (gatewayMarker){ gatewayMarker.setLatLng([loc.lat, loc.lon]);
+      if (!window.repGwPopup) gatewayMarker.setPopupContent('<b>' + escHtml(loc.name || 'Local repeater') + '</b><br>position from ' + escHtml(loc.source) + '<br>antenna gain ' + loc.gain_dbi + ' dBi (' + escHtml(loc.gain_src) + ')'); }
+  }
+  if (!document.getElementById('sim-toggle').checked){ info.textContent = ''; return; }
+  if (d.note){ info.textContent = d.note; return; }
+  simLayer = L.layerGroup().addTo(leafletMap);
+  d.items.forEach(it => {
+    const disc = it.source === 'discovered';
+    const col = it.measured && it.measured.snr != null && disc ? linkColour(it.measured.snr) : simColour(it.rssi_dbm);
+    if (disc) window.simKeys.add(it.key.length > 8 ? '!' + it.key.slice(0, 8) : '!' + it.key);
+    const line = L.polyline([[loc.lat, loc.lon], [it.lat, it.lon]], {color: col, weight: disc ? 3 : 1.5, opacity: disc ? .9 : .6, dashArray: disc ? null : '6 6'}).addTo(simLayer);
+    const lbl = 'sim PL ' + it.pathloss_db + ' dB' + (it.measured && it.measured.pathloss_db != null ? ' | meas ' + it.measured.pathloss_db : '');
+    line.bindTooltip(lbl, {permanent: disc, direction: 'center', className: 'link-label', sticky: !disc});
+    line.bindPopup(simPopup(it, loc));
+    if (!disc){
+      L.circleMarker([it.lat, it.lon], {radius: 5, color: '#5b8def', fillColor: '#5b8def', fillOpacity: .8, weight: 1})
+        .addTo(simLayer).bindPopup(simPopup(it, loc)).bindTooltip(it.name || it.key.slice(0, 8));
+    }
+  });
+  const disc = d.items.filter(i => i.source === 'discovered').length;
+  info.textContent = d.items.length + ' repeater(s): ' + disc + ' heard, ' + (d.items.length - disc) + ' public within ' + d.radius_km + ' km - '
+    + d.tx_dbm + ' dBm TX, ' + d.freq_mhz + ' MHz, free-space (best case)'
+    + (d.directory && d.directory.error && !d.directory.count ? ' - public directory unavailable: ' + d.directory.error : '');
+  if (typeof renderMap === 'function') renderMap();
+}
+
+function loadSim(){
+  fetch('/api/public/links').then(r => r.json()).then(d => { if (d && !d.error) drawSim(d); else if (d) document.getElementById('sim-info').textContent = d.error; }).catch(() => {});
+}
+
+(function(){
+  const t = document.getElementById('sim-toggle');
+  if (t) t.addEventListener('change', loadSim);
+  const orig = window.showPage;
+  if (typeof orig === 'function') window.showPage = function(name){
+    const r = orig.apply(this, arguments);
+    if (simTimer){ clearInterval(simTimer); simTimer = null; }
+    if (name === 'map'){ setTimeout(loadSim, 400); simTimer = setInterval(loadSim, 20000); }
+    return r;
+  };
+  if (location.hash === '#map') setTimeout(loadSim, 1500);
+})();

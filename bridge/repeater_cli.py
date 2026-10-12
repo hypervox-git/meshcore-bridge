@@ -95,6 +95,13 @@ def _cmd(line, wait=3.0, idle=0.5):
     return out
 
 
+def _clean_reply(t):
+    """'> Ironhorse' -> 'Ironhorse'; unknown-command replies -> None."""
+    if not t or 'unknown' in t.lower():
+        return None
+    return t.lstrip('> ').strip() or None
+
+
 def command(line, wait=3.0):
     """Public: run one CLI line on the repeater (raises if not connected)."""
     if _ser is None or not state.serial_connected:
@@ -198,6 +205,8 @@ def _loop():
             _ser = _open()
             time.sleep(1.5)                                  # let a booting node settle
             latest['ver'] = (_cmd('ver') or [None])[0]
+            latest['name'] = _clean_reply((_cmd('get name') or [None])[0])
+            latest['radio_cfg'] = _clean_reply((_cmd('get radio') or [None])[0])
             _set(True)
             print(f"[repeater] connected on {PORT}: {latest['ver']}")
             delay = 5
