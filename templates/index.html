@@ -97,7 +97,12 @@
     <div class="config-section" id="plan-card">
       <div class="config-title">Line of sight &amp; antenna orientation planner</div>
       <div class="config-hint">Which public repeaters Ironhorse can see over the terrain (4/3-earth, Fresnel, 90 m elevation data, assumed mast heights), and which azimuth for a directional antenna reaches the most. A planning aid &mdash; buildings and trees are not modelled.</div>
-      <div class="config-actions"><button class="btn btn-send" id="plan-btn" onclick="planRun()">Analyse</button><span class="send-status" id="plan-status"></span></div>
+      <div class="config-actions"><button class="btn btn-send" id="plan-btn" onclick="planRun()">Analyse</button>
+        <button class="btn btn-share" onclick="aimAt('heard')">Aim at heard neighbours</button>
+        <button class="btn" onclick="aimAt('best')">Use planner best</button>
+        <button class="btn" onclick="aimAt('reset')">Reset to config.py</button>
+        <span class="send-status" id="plan-status"></span></div>
+      <div id="aim-result" class="duty-note"></div>
       <div id="plan-results"></div>
       <div class="tm-chart"><canvas id="plan-chart"></canvas></div>
     </div>

@@ -3,7 +3,7 @@
 # and the nearest public repeaters, each with a simulated free-space link from us.
 import re
 
-from bridge import cli_ref, linkmodel, publicdir
+from bridge import antenna as antenna_cfg, cli_ref, linkmodel, publicdir
 from bridge.state import node_db
 
 try:
@@ -35,8 +35,11 @@ def local_info():
     ant = _c('LOCAL_ANTENNA', None)
     if isinstance(ant, dict) and ant.get('gain_dbi') is not None:
         fb = float(ant.get('front_back_db', 25))
+        ov = antenna_cfg.override()                       # aim set from the web UI wins over config.py
         antenna = {'type': ant.get('type', 'directional'), 'gain_dbi': float(ant['gain_dbi']),
-                   'azimuth_deg': float(ant.get('azimuth_deg', 0)) % 360, 'front_back_db': fb,
+                   'azimuth_deg': float(ov['azimuth_deg'] if ov else ant.get('azimuth_deg', 0)) % 360,
+                   'azimuth_source': ('UI override: ' + str(ov.get('reason'))) if ov else 'config.py',
+                   'front_back_db': fb,
                    'beamwidth_deg': round(linkmodel.half_power_beamwidth_deg(fb), 0), 'directional': True}
         gsrc = 'config: ' + str(antenna['type'])
     else:

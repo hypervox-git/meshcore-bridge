@@ -100,3 +100,33 @@ def test_moxon_applied_per_bearing(tmp_path, monkeypatch):
     assert 85 < e['bearing_deg'] < 95 and 265 < w['bearing_deg'] < 275
     assert e['gain_local_dbi'] > 3 and w['gain_local_dbi'] < -15           # in front vs behind the Moxon
     assert w['pathloss_db'] - e['pathloss_db'] > 15 + (w['fspl_db'] - e['fspl_db']) - 1
+
+
+def test_aim_at_points_between_neighbours(tmp_path, monkeypatch):
+    from bridge import antenna
+    az, gains = antenna.aim_at([42, 108], 5.5, 25)
+    assert 70 <= az <= 80 and abs(gains[0] - gains[1]) < 0.3                # midpoint of the two bearings
+    az1, g1 = antenna.aim_at([257], 5.5, 25)
+    assert abs(az1 - 257) < 1 and g1[0] == pytest.approx(5.5, abs=0.05)     # a single neighbour: straight at it
+
+
+def test_override_file_and_heard_aim(tmp_path, monkeypatch):
+    from bridge import antenna
+    dirfile(tmp_path, monkeypatch, RECS)
+    f = tmp_path / 'ant.json'
+    cli.latest.update(name='Ironhorse', radio_cfg='869.618,62.5,8,8', neighbours=[
+        {'id': '99887766', 'age_s': '5', 'snr': '16', 'snr_db': 4.0, 'raw': 'x', 'key': None, 'name': None, 'lat': None, 'lon': None}])
+    cfg = {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'ANTENNA_FILE': str(f),
+           'LOCAL_ANTENNA': {'type': 'Moxon', 'gain_dbi': 5.5, 'azimuth_deg': 200, 'front_back_db': 25}}
+    for m in (publiclinks, antenna):
+        monkeypatch.setattr(m, '_c', lambda n, d: cfg.get(n, d))
+    assert publiclinks.local_info()['antenna']['azimuth_deg'] == 200        # from config.py
+    s = antenna.aim_heard()
+    assert abs(s['azimuth_deg'] - s['neighbours'][0]['bearing_deg']) < 1 and s['neighbours'][0]['gain_new_dbi'] > s['neighbours'][0]['gain_now_dbi']
+    antenna.save(s['azimuth_deg'], 'test')
+    assert publiclinks.local_info()['antenna']['azimuth_deg'] == pytest.approx(s['azimuth_deg'], abs=0.1)
+    antenna.reset()
+    assert publiclinks.local_info()['antenna']['azimuth_deg'] == 200
+    cli.latest.update(neighbours=[])
+    with pytest.raises(RuntimeError, match='no heard neighbours'):
+        antenna.aim_heard()

@@ -78,3 +78,4 @@ PLAN_RADIUS_KM           = 60
 PLAN_MAX_REPEATERS       = 30     # nearest N public repeaters analysed (terrain lookups scale with this)
 PLAN_FADE_MARGIN_DB      = 10     # a link counts as reachable above sensitivity + this margin
 PLAN_SENSITIVITY_DBM     = -130   # fallback if the radio settings can't be read from the repeater
+ANTENNA_FILE             = "meshcore_antenna.json"   # aim saved from the web UI (overrides LOCAL_ANTENNA azimuth); git-ignored

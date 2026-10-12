@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna
 
 
 @app.route("/")
@@ -157,6 +157,37 @@ def api_plan():
 @app.route("/api/plan/run", methods=["POST"])
 def api_plan_run():
     return _guard(siteplan.run)
+
+
+@app.route("/api/antenna")
+def api_antenna():
+    return _guard(lambda: {"ok": True, "override": antenna.override(), "antenna": publiclinks.local_info()["antenna"]})
+
+
+@app.route("/api/antenna/aim", methods=["POST"])
+def api_antenna_aim():
+    d = request.get_json(silent=True) or {}
+    mode = d.get("mode", "heard")
+
+    def go():
+        if mode == "reset":
+            antenna.reset()
+            return {"ok": True, "antenna": publiclinks.local_info()["antenna"]}
+        if mode == "azimuth":
+            az, why, extra = float(d["azimuth"]), "manual", {}
+        elif mode == "best":
+            res = (siteplan.status().get("result") or {})
+            if not res:
+                raise RuntimeError("run the planner first (Test tab -> Analyse)")
+            az, why, extra = res["best"]["azimuth_deg"], "planner best", {}
+        else:
+            extra = antenna.aim_heard()
+            az, why = extra["azimuth_deg"], "aimed at heard neighbours"
+        if d.get("apply", True):
+            antenna.save(az, why)
+        return dict(extra, ok=True, azimuth_deg=az, applied=bool(d.get("apply", True)),
+                    antenna=publiclinks.local_info()["antenna"])
+    return _guard(go)
 
 
 @app.route("/api/public/status")

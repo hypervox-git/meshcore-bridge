@@ -610,3 +610,18 @@ function planRun(){
     if (planTimer) clearInterval(planTimer); planTimer = setInterval(planPoll, 2000); planPoll(); }).catch(e => setStatus('plan-status', 'Error: ' + e, 'err'));
 }
 planPoll();
+
+// ---- aim the modelled antenna ------------------------------------------------------
+function aimAt(mode){
+  const out = document.getElementById('aim-result'); out.textContent = '...';
+  post('/api/antenna/aim', {mode}).then(d => {
+    if (!d.ok){ out.textContent = d.error; return; }
+    const a = d.antenna || {};
+    out.innerHTML = (mode === 'reset' ? 'Back to config.py: ' : 'Boresight set to <b>' + d.azimuth_deg + '&deg;</b>: ') + escHtml(String(a.type)) + ' ' + a.azimuth_deg + '&deg; (' + escHtml(a.azimuth_source || '') + ').'
+      + (d.neighbours ? '<table class="nb-table"><tr><th>Heard neighbour</th><th>Bearing</th><th>Dist</th><th>Gain before</th><th>Gain after</th></tr>'
+        + d.neighbours.map(n => '<tr><td>' + escHtml(n.name) + '</td><td>' + n.bearing_deg + '&deg;</td><td>' + n.distance_km + ' km</td><td>' + n.gain_now_dbi + ' dBi</td><td style="color:' + (n.gain_new_dbi > n.gain_now_dbi ? '#00e5a0' : '#ff9500') + '">' + n.gain_new_dbi + ' dBi</td></tr>').join('') + '</table>' : '')
+      + '<div class="config-hint">This updates the model and map. Rotate the physical antenna to ' + (mode === 'reset' ? 'the config.py bearing' : d.azimuth_deg + '&deg; true') + ' to match.</div>';
+    if (typeof loadSim === 'function') loadSim();
+    planPoll();
+  }).catch(e => { out.textContent = 'Error: ' + e; });
+}
