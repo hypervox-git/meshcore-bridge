@@ -60,6 +60,8 @@ def _emit(event, data):
 
 
 def _require_connected():
+    if _c('SERIAL_MODE', 'companion') == 'repeater':
+        raise RuntimeError('Node is in repeater mode (SERIAL_MODE) - this needs a Companion-USB node')
     if io.mc is None or not state.serial_connected:
         why = state.last_serial_error[0]
         raise RuntimeError('MeshCore node not connected' + (f': {why}' if why else

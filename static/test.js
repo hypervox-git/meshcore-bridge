@@ -329,3 +329,43 @@ fetch('/api/test/status').then(r => r.json()).then(s => {
   window.addEventListener('hashchange', go);
   go();
 })();
+
+// ---- Repeater (serial CLI) mode --------------------------------------------
+let repChart = null;
+function repApply(r){
+  if (!r || r.mode !== 'repeater') return;
+  document.getElementById('rep-card').style.display = '';
+  ['lt-card', 'tr-card'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  const nb = document.getElementById('nb-btn'); if (nb) nb.disabled = true;
+  const st = document.getElementById('nb-status');
+  if (st) st.textContent = 'Repeater mode: discovery needs a Companion-USB node (see Test tab)';
+  document.getElementById('rep-info').textContent = (r.ver ? 'Firmware ' + r.ver + ' - ' : '') + r.port
+    + (r.connected ? '' : ' - NOT CONNECTED: ' + (r.error || ''));
+  const q = r.radio; if (!q) return;
+  ltTile('rp-nf', q.noise_floor, ' dBm'); ltTile('rp-rssi', q.last_rssi, ' dBm');
+  ltTile('rp-snr', q.last_snr, ' dB', snrColor(q.last_snr));
+  document.getElementById('rp-air').textContent = q.tx_air_secs + ' s / ' + q.rx_air_secs + ' s';
+  const p = r.packets;
+  if (p){
+    document.getElementById('rp-pk').textContent = p.recv + ' / ' + p.sent;
+    document.getElementById('rp-err').textContent = p.recv_errors;
+  }
+  if (r.neighbours) document.getElementById('rp-nb').textContent =
+    r.neighbours.length ? r.neighbours.map(n => n.raw).join('\n') : 'none heard';
+  if (!repChart && window.Chart){
+    repChart = new Chart(document.getElementById('rp-chart'), {type: 'line',
+      data: {labels: [], datasets: [
+        {label: 'RSSI', data: [], borderColor: '#4aa3ff', pointRadius: 0, tension: .2},
+        {label: 'Noise floor', data: [], borderColor: '#ff9f40', pointRadius: 0, tension: .2}]},
+      options: {animation: false, maintainAspectRatio: false, scales: {y: {title: {display: true, text: 'dBm'}}}}});
+  }
+  if (repChart){
+    const t = new Date().toLocaleTimeString('en-GB', {hour12: false});
+    repChart.data.labels.push(t); repChart.data.datasets[0].data.push(q.last_rssi);
+    repChart.data.datasets[1].data.push(q.noise_floor);
+    if (repChart.data.labels.length > 150){ repChart.data.labels.shift(); repChart.data.datasets.forEach(d => d.data.shift()); }
+    repChart.update('none');
+  }
+}
+socket.on('rep_sample', repApply);
+fetch('/api/repeater').then(r => r.json()).then(repApply).catch(() => {});

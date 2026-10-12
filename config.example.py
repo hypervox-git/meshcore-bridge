@@ -1,6 +1,10 @@
 # Copy to config.py and edit. config.py is git-ignored.
 SERIAL_PORT     = "/dev/serial/by-id/usb-CHANGEME"   # MeshCore node flashed as a SERIAL companion
 BAUD_RATE       = 115200
+# "companion" = node runs Companion-USB firmware (full features).
+# "repeater"  = node runs Repeater firmware: read-only local RSSI/noise-floor/neighbours
+#               via its serial CLI (no discovery/traceroute/remote polling).
+SERIAL_MODE     = "companion"
 MESHCORE_DEBUG  = False        # True logs raw event payloads (use to confirm field mapping)
 MQTT_BROKER     = "127.0.0.1"
 MQTT_PORT       = 1883

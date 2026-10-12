@@ -110,6 +110,15 @@ Home Assistant is opened over local `http://`; for an HTTPS front end, proxy the
 behind the same TLS origin. The traceroute's "Show on map" switches to the bridge's own
 Map tab inside the embed - Home Assistant's native map cannot draw the path.
 
+### Repeater mode (no companion node)
+
+If the node on `SERIAL_PORT` runs **Repeater** firmware (its USB serial is a text CLI, so the
+companion handshake fails with "No response from meshcore node"), set `SERIAL_MODE = "repeater"`
+in `config.py`. The bridge then polls `stats-radio`, `stats-packets` and `neighbors` read-only
+and shows live noise floor / RSSI / SNR, airtime, packet counters and directly-heard
+neighbours on the **Test** tab. Nothing is transmitted. Discovery, traceroute and remote
+polling need a Companion-USB node (`SERIAL_MODE = "companion"`, the default).
+
 ### Duty cycle
 
 Duty cycle is a per-transmitter limit, so every request is budgeted against **both** our

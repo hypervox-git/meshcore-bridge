@@ -90,7 +90,24 @@
   <div class="scroll-area"><div class="config-page">
     <div class="warning-box">Test mode transmits. Every request is paced against the duty-cycle limit for <b>both</b> your node and the target, using only a fixed share of the legal limit. Airtime figures are conservative estimates.</div>
 
-    <div class="config-section">
+    <div class="config-section" id="rep-card" style="display:none">
+      <div class="config-title">Local repeater &mdash; live (serial CLI, receive-only)</div>
+      <div class="config-hint" id="rep-info"></div>
+      <div class="tm-tiles">
+        <div class="tm-tile"><div class="tm-label">Noise floor</div><div class="tm-val" id="rp-nf">-</div></div>
+        <div class="tm-tile"><div class="tm-label">Last RSSI</div><div class="tm-val" id="rp-rssi">-</div></div>
+        <div class="tm-tile"><div class="tm-label">Last SNR</div><div class="tm-val" id="rp-snr">-</div></div>
+        <div class="tm-tile"><div class="tm-label">TX / RX airtime</div><div class="tm-val" id="rp-air">-</div></div>
+        <div class="tm-tile"><div class="tm-label">Packets rx / tx</div><div class="tm-val" id="rp-pk">-</div></div>
+        <div class="tm-tile"><div class="tm-label">Receive errors</div><div class="tm-val" id="rp-err">-</div></div>
+      </div>
+      <div class="tm-chart"><canvas id="rp-chart"></canvas></div>
+      <div class="config-title" style="margin-top:.8rem">Heard directly (neighbors)</div>
+      <pre id="rp-nb" class="duty-note" style="white-space:pre-wrap">-</pre>
+      <div class="config-hint">Nothing here transmits, so it costs no duty cycle. Discovery, traceroute and remote polling need a Companion-USB node.</div>
+    </div>
+
+    <div class="config-section" id="lt-card">
       <div class="config-title">Live link test &mdash; RSSI &amp; noise floor</div>
       <div class="config-row"><span class="config-label">Target<div class="config-hint">Repeater, room server or sensor</div></span><select id="lt-target" class="config-select"></select></div>
       <div class="config-row"><span class="config-label">Password<div class="config-hint">Guest/admin login, or leave empty to use REPEATER_PASSWORD from config.py. Not stored.</div></span><input id="lt-pass" type="password" class="config-num" autocomplete="new-password"></div>
@@ -114,7 +131,7 @@
       <div class="duty-wrap" id="lt-duty"></div>
     </div>
 
-    <div class="config-section">
+    <div class="config-section" id="tr-card">
       <div class="config-title">Traceroute</div>
       <div class="config-row"><span class="config-label">Target<div class="config-hint">Discovers the route, then traces it out and back</div></span><select id="tr-target" class="config-select"></select></div>
       <div class="config-actions">
