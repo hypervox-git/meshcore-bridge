@@ -68,3 +68,35 @@ def test_unknown_position_gives_note(tmp_path, monkeypatch):
     cli.latest.update(name=None)
     monkeypatch.setattr(publiclinks, '_c', lambda n, d: {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'LOCAL_NAME': None}.get(n, d))
     assert 'position unknown' in publiclinks.links()['note']
+
+
+def test_antenna_pattern():
+    g = linkmodel.antenna_gain_dbi
+    assert g(0, 5.5, 25) == pytest.approx(5.5, abs=0.01)
+    assert g(180, 5.5, 25) == pytest.approx(5.5 - 25, abs=0.01)             # front-to-back exactly
+    assert 5.5 - 25 < g(90, 5.5, 25) < 5.5 - 3                              # side is in between
+    assert g(30, 5.5, 25) > g(60, 5.5, 25) > g(120, 5.5, 25)                # monotonic roll-off
+    assert 120 < linkmodel.half_power_beamwidth_deg(25) < 150               # wide azimuth lobe
+
+
+def test_bearing():
+    assert linkmodel.bearing_deg(51, -2, 52, -2) == pytest.approx(0, abs=0.5)
+    assert linkmodel.bearing_deg(51, -2, 51, -1) == pytest.approx(90, abs=1)
+    assert linkmodel.off_boresight_deg(350, 10) == 20 and linkmodel.off_boresight_deg(290, 110) == 180
+
+
+def test_moxon_applied_per_bearing(tmp_path, monkeypatch):
+    dirfile(tmp_path, monkeypatch, RECS + [
+        {'public_key': 'beef0001' + '00' * 28, 'adv_name': 'East RPT', 'adv_lat': 51.30, 'adv_lon': -2.76, 'type': 2},   # ~ due east
+        {'public_key': 'beef0002' + '00' * 28, 'adv_name': 'West RPT', 'adv_lat': 51.30, 'adv_lon': -3.04, 'type': 2}])  # ~ due west
+    cli.latest.update(name='Ironhorse-RPT', radio_cfg='869.618,62.5,8,8', neighbours=[])
+    cfg = {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'LOCAL_NAME': 'Ironhorse-RPT',
+           'LOCAL_ANTENNA': {'type': 'Moxon', 'gain_dbi': 5.5, 'azimuth_deg': 110, 'front_back_db': 25}}
+    monkeypatch.setattr(publiclinks, '_c', lambda n, d: cfg.get(n, d))
+    out = publiclinks.links()
+    assert out['local']['name'] == 'Ironhorse-RPT' and out['local']['antenna']['directional']
+    by = {i['name']: i for i in out['items']}
+    e, w = by['East RPT'], by['West RPT']
+    assert 85 < e['bearing_deg'] < 95 and 265 < w['bearing_deg'] < 275
+    assert e['gain_local_dbi'] > 3 and w['gain_local_dbi'] < -15           # in front vs behind the Moxon
+    assert w['pathloss_db'] - e['pathloss_db'] > 15 + (w['fspl_db'] - e['fspl_db']) - 1

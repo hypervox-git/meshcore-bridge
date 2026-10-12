@@ -176,6 +176,10 @@ def find_by_name(name, node_type='repeater'):
         return None
     with _lock:
         exact = [r for r in _nodes if r['name'].strip().lower() == n]
+    if not exact:                                  # lenient: 'Ironhorse' ~ 'Ironhorse-RPT'
+        with _lock:
+            exact = [r for r in _nodes if r['name'].strip().lower().startswith(n) or
+                     (len(r['name']) > 3 and n.startswith(r['name'].strip().lower()))]
     pref = [r for r in exact if r['type'] == node_type] or exact
     return pref[0] if pref else None
 

@@ -482,10 +482,32 @@ function simPopup(it, loc){
   return '<b>' + escHtml(it.name || it.key.slice(0, 8)) + '</b> (' + (it.source === 'discovered' ? 'heard by us' : 'public directory') + ')<br>' + escHtml(it.key.slice(0, 8))
     + '<br>Distance ' + it.distance_km + ' km @ ' + it.freq_mhz + ' MHz'
     + '<br>Free-space loss ' + it.fspl_db + ' dB'
-    + '<br>Antenna gain: ' + (loc.gain_dbi || 0) + ' dBi here + ' + it.gain_remote_dbi + ' dBi there (' + escHtml(it.gain_src) + ')'
+    + (loc.antenna && loc.antenna.directional ? '<br>Bearing ' + it.bearing_deg + '&deg; (' + it.off_boresight_deg + '&deg; off ' + escHtml(String(loc.antenna.type)) + ' boresight ' + loc.antenna.azimuth_deg + '&deg;)' : '')
+    + '<br>Antenna gain: ' + it.gain_local_dbi + ' dBi here' + (loc.antenna && loc.antenna.directional ? ' (peak ' + loc.antenna.gain_dbi + ', F/B ' + loc.antenna.front_back_db + ' dB)' : '') + ' + ' + it.gain_remote_dbi + ' dBi there (' + escHtml(it.gain_src) + ')'
     + '<br><b>Simulated path loss ' + it.pathloss_db + ' dB</b> &rarr; ' + it.rssi_dbm + ' dBm at ' + it.tx_dbm + ' dBm TX'
     + (m.pathloss_db != null ? '<br>Measured path loss ~' + m.pathloss_db + ' dB (' + (it.excess_db >= 0 ? '+' : '') + it.excess_db + ' dB vs free space)' : '')
     + (m.snr != null ? '<br>SNR ' + m.snr + ' dB' : '');
+}
+
+function destPoint(lat, lon, brgDeg, km){
+  const R = 6371.0088, b = brgDeg * Math.PI / 180, p1 = lat * Math.PI / 180, l1 = lon * Math.PI / 180, dr = km / R;
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(dr) + Math.cos(p1) * Math.sin(dr) * Math.cos(b));
+  const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(dr) * Math.cos(p1), Math.cos(dr) - Math.sin(p1) * Math.sin(p2));
+  return [p2 * 180 / Math.PI, l2 * 180 / Math.PI];
+}
+
+function drawBeam(loc, d){
+  // Azimuth pattern of OUR directional antenna drawn around the repeater (lobe length ~ field strength).
+  const a = loc.antenna; if (!a || !a.directional) return;
+  const far = Math.max(2, ...d.items.map(i => i.distance_km)) * 0.45;
+  const r = Math.pow(10, -a.front_back_db / 20), beta = (1 - r) / (1 + r), pts = [];
+  for (let t = 0; t < 360; t += 5){
+    const e = Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
+    pts.push(destPoint(loc.lat, loc.lon, a.azimuth_deg + t, far * e));
+  }
+  L.polygon(pts, {color: '#5b8def', weight: 1, fillColor: '#5b8def', fillOpacity: .12, interactive: false}).addTo(simLayer);
+  L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, a.azimuth_deg, far * 1.1)], {color: '#5b8def', weight: 2, dashArray: '2 4', interactive: false})
+    .addTo(simLayer).bindTooltip(a.type + ' ' + a.azimuth_deg + '\u00b0 | ' + a.gain_dbi + ' dBi | F/B ' + a.front_back_db + ' dB', {permanent: true, direction: 'top', className: 'link-label'});
 }
 
 function drawSim(d){
@@ -502,6 +524,7 @@ function drawSim(d){
   if (!document.getElementById('sim-toggle').checked){ info.textContent = ''; return; }
   if (d.note){ info.textContent = d.note; return; }
   simLayer = L.layerGroup().addTo(leafletMap);
+  drawBeam(loc, d);
   d.items.forEach(it => {
     const disc = it.source === 'discovered';
     const col = it.measured && it.measured.snr != null && disc ? linkColour(it.measured.snr) : simColour(it.rssi_dbm);
@@ -516,7 +539,7 @@ function drawSim(d){
     }
   });
   const disc = d.items.filter(i => i.source === 'discovered').length;
-  info.textContent = d.items.length + ' repeater(s): ' + disc + ' heard, ' + (d.items.length - disc) + ' public within ' + d.radius_km + ' km - '
+  info.textContent = (loc.antenna && loc.antenna.directional ? loc.antenna.type + ' ' + loc.antenna.azimuth_deg + '\u00b0, ' + loc.antenna.gain_dbi + ' dBi, F/B ' + loc.antenna.front_back_db + ' dB - ' : '') + d.items.length + ' repeater(s): ' + disc + ' heard, ' + (d.items.length - disc) + ' public within ' + d.radius_km + ' km - '
     + d.tx_dbm + ' dBm TX, ' + d.freq_mhz + ' MHz, free-space (best case)'
     + (d.directory && d.directory.error && !d.directory.count ? ' - public directory unavailable: ' + d.directory.error : '');
   if (typeof renderMap === 'function') renderMap();

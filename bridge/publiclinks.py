@@ -32,18 +32,33 @@ def local_info():
         lat, lon, src = glat, glon, 'config'
     elif rec:
         lat, lon, src = rec['lat'], rec['lon'], 'public directory'
-    gain = _c('LOCAL_ANTENNA_GAIN_DBI', None)
-    gsrc = 'config'
-    if gain is None:
-        gain, gsrc = publicdir.override_gain(rec) if rec else (0.0, 'assumed')
-    return {'name': name, 'lat': lat, 'lon': lon, 'source': src, 'gain_dbi': float(gain), 'gain_src': gsrc,
-            'key': rec['key'] if rec else None}
+    ant = _c('LOCAL_ANTENNA', None)
+    if isinstance(ant, dict) and ant.get('gain_dbi') is not None:
+        fb = float(ant.get('front_back_db', 25))
+        antenna = {'type': ant.get('type', 'directional'), 'gain_dbi': float(ant['gain_dbi']),
+                   'azimuth_deg': float(ant.get('azimuth_deg', 0)) % 360, 'front_back_db': fb,
+                   'beamwidth_deg': round(linkmodel.half_power_beamwidth_deg(fb), 0), 'directional': True}
+        gsrc = 'config: ' + str(antenna['type'])
+    else:
+        gain = _c('LOCAL_ANTENNA_GAIN_DBI', None)
+        gsrc = 'config'
+        if gain is None:
+            gain, gsrc = publicdir.override_gain(rec) if rec else (0.0, 'assumed')
+        antenna = {'type': 'omni', 'gain_dbi': float(gain), 'directional': False}
+    return {'name': name, 'lat': lat, 'lon': lon, 'source': src, 'gain_dbi': antenna['gain_dbi'],
+            'gain_src': gsrc, 'antenna': antenna, 'key': rec['key'] if rec else None}
 
 
 def _item(src, key, name, lat, lon, gain, gain_src, loc, tx, f, measured):
-    sim = linkmodel.simulate(linkmodel.haversine_km(loc['lat'], loc['lon'], lat, lon), f, tx,
-                             loc['gain_dbi'], gain)
-    item = dict(sim, source=src, key=key, name=name, lat=lat, lon=lon, gain_src=gain_src, freq_mhz=f)
+    ant = loc['antenna']
+    brg = linkmodel.bearing_deg(loc['lat'], loc['lon'], lat, lon)
+    off = linkmodel.off_boresight_deg(brg, ant['azimuth_deg']) if ant['directional'] else 0.0
+    g_local = (linkmodel.antenna_gain_dbi(off, ant['gain_dbi'], ant['front_back_db'])
+               if ant['directional'] else ant['gain_dbi'])
+    sim = linkmodel.simulate(linkmodel.haversine_km(loc['lat'], loc['lon'], lat, lon), f, tx, g_local, gain)
+    sim['gain_local_dbi'] = round(g_local, 1)
+    item = dict(sim, source=src, key=key, name=name, lat=lat, lon=lon, gain_src=gain_src, freq_mhz=f,
+                bearing_deg=round(brg, 0), off_boresight_deg=round(off, 0))
     if measured and measured.get('pathloss_db') is not None:
         item['measured'] = measured
         item['excess_db'] = round(measured['pathloss_db'] - sim['pathloss_db'], 1)
