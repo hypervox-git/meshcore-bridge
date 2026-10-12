@@ -152,6 +152,11 @@ def api_rtest_start():
     return _guard(lambda: repeater_test.start(d.get("minutes"), d.get("offline"), d.get("assumed_tx_dbm")))
 
 
+@app.route("/api/rtest/discover", methods=["POST"])
+def api_rtest_discover():
+    return _guard(repeater_test.discover)
+
+
 @app.route("/api/rtest/stop", methods=["POST"])
 def api_rtest_stop():
     return _guard(repeater_test.stop)

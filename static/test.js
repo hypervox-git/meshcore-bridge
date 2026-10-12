@@ -387,6 +387,7 @@ function rtRender(v){
   ['rt-min', 'rt-off', 'rt-tx'].forEach(id => document.getElementById(id).disabled = running);
   document.getElementById('rt-start').disabled = running || !v.connected;
   document.getElementById('rt-stop').disabled = !running;
+  document.getElementById('rt-disc').disabled = !running;
   const st = document.getElementById('rt-state');
   if (running){
     st.textContent = (v.offline ? 'Repeater OFFLINE - returns to the mesh in ' : 'Testing (still forwarding) - ends in ') + rtFmt(v.remaining_s);
@@ -402,7 +403,12 @@ function rtRender(v){
     + '<td>' + fmt(n.pathloss_db, ' dB', 1) + '</td><td>' + n.heard + '</td><td>' + (n.age == null ? '-' : Math.round(n.age) + ' s') + '</td></tr>').join('');
   const hv = (v.heard || []).slice().reverse().map(h => '<tr><td>' + new Date(h.ts * 1000).toLocaleTimeString('en-GB', {hour12: false})
     + '</td><td>' + fmt(h.rssi, ' dBm', 0) + '</td><td style="color:' + snrColor(h.snr) + '">' + fmt(h.snr, ' dB', 1) + '</td><td>' + h.n + '</td></tr>').join('');
-  el.innerHTML = '<div class="duty-note">Packets heard this test: <b>' + v.packets_heard + '</b>'
+  const dv = v.discover;
+  const dnote = !dv ? '' : dv.supported === false
+    ? '<div class="duty-note" style="color:var(--warn)">discover.neighbors is not supported by this firmware (' + escHtml(dv.reply) + ') - discovery is passive: neighbours appear when their advert is heard.</div>'
+    : dv.supported === null ? '<div class="duty-note" style="color:var(--warn)">Discovery not sent: ' + escHtml(dv.reply) + '</div>'
+    : '<div class="duty-note">discover.neighbors sent at ' + new Date(dv.ts * 1000).toLocaleTimeString('en-GB', {hour12: false}) + (dv.tx_air_s != null ? ' (' + dv.tx_air_s + ' s airtime)' : '') + (dv.reply ? ' - ' + escHtml(dv.reply) : '') + '</div>';
+  el.innerHTML = dnote + '<div class="duty-note">Packets heard this test: <b>' + v.packets_heard + '</b>'
     + (v.noise ? ' - noise floor min/avg/max ' + v.noise.min + ' / ' + v.noise.avg + ' / ' + v.noise.max + ' dBm' : '')
     + (v.our_tx_dbm != null ? ' - our TX power ' + v.our_tx_dbm + ' dBm' : '')
     + (v.radio_cfg ? ' - radio ' + escHtml(v.radio_cfg) : '') + '</div>'
@@ -421,6 +427,7 @@ function rtStart(){
   post('/api/rtest/start', body).then(d => { if (!d.ok) setStatus('rt-status', d.error, 'err'); else { setStatus('rt-status', '', ''); rtRender(d); } })
     .catch(e => setStatus('rt-status', 'Error: ' + e, 'err'));
 }
+function rtDiscover(){ post('/api/rtest/discover').then(d => setStatus('rt-status', d.ok ? 'Discovery sent' : d.error, d.ok ? 'ok' : 'err')).catch(() => {}); }
 function rtStop(){ post('/api/rtest/stop').then(rtRender).catch(() => {}); }
 
 socket.on('rtest_state', rtRender);

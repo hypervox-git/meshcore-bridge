@@ -50,3 +50,4 @@ REP_TEST_OFFLINE         = True   # default: stop forwarding (`set repeat off`) 
 REP_TEST_SAMPLE          = 1.0    # s between polls while a test runs (serial only, no airtime)
 ASSUMED_NEIGHBOUR_TX_DBM = 20     # neighbour TX power used for the path-loss ESTIMATE
 REP_RESTORE_FILE         = "meshcore_repeater_restore.json"   # crash-safety marker (git-ignored)
+REP_TEST_DISCOVER         = True   # send `discover.neighbors` when a test starts (if the firmware has it)

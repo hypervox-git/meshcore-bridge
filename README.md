@@ -125,7 +125,7 @@ returns**: when the timer ends (`REP_TEST_MINUTES`, capped by `REP_TEST_MAX_MINU
 if the serial link drops, on bridge shutdown, and after a bridge crash (a git-ignored marker file
 is acted on at the next connect; restore retries until `get repeat` confirms). `set repeat` is
 stored in the repeater's flash, so if the *Pi itself* loses power mid-test, send `set repeat on`.
-Discovery is **passive** (the firmware has no CLI command to make neighbours answer; a neighbour
+Discovery: the test sends `discover.neighbors` at start (and via *Discover now*) when the firmware has it; otherwise it is **passive** (a neighbour
 shows up when its zero-hop advert is heard) - use a Companion-USB node for active discovery.
 Path loss = assumed neighbour TX power (`ASSUMED_NEIGHBOUR_TX_DBM`) - measured RSSI, so it is
 an estimate. Discovery, traceroute and remote

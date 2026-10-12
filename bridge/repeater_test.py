@@ -11,10 +11,12 @@
 # Caveat: `set repeat` is stored in the repeater's flash, so if the Pi itself dies mid-test
 # the repeater stays muted until someone sends `set repeat on` (the UI says so).
 #
-# What it can and cannot do (firmware 1.17.x CLI): neighbour discovery is PASSIVE - the
-# repeater's `neighbors` table fills when it hears a neighbour's zero-hop advert; there is
-# no CLI command to make neighbours answer. Active discovery needs a Companion-USB node.
-# Nothing here transmits, so it costs no duty cycle.
+# Neighbour discovery: at test start (and on demand) we send the CLI command
+# `discover.neighbors` - a single short zero-hop request that makes neighbours answer, so
+# the `neighbors` table fills in seconds. Not every firmware has it (1.17.1 answers
+# "Unknown command"); then the test falls back to PASSIVE discovery (a neighbour shows up
+# when its zero-hop advert is heard). The only transmission is that one request; its real
+# airtime is measured from the radio's tx_air_secs counter and shown.
 #
 # Path loss = assumed neighbour TX power - RSSI we measured (the neighbour's real TX power
 # and antenna gains are unknown, so it is an ESTIMATE). The per-neighbour RSSI is the
@@ -58,6 +60,11 @@ _t = None                  # current/last session dict
 _stop = threading.Event()
 _restoring = False
 _ONOFF = re.compile(r'\b(on|off)\b', re.I)
+_last_discover = 0.0
+
+
+def _discover_min_interval():
+    return float(_c('DISCOVER_MIN_INTERVAL', 30))
 
 
 def _emit(event, data):
@@ -186,11 +193,47 @@ def _parse_snr(v):
         return None
 
 
+def _tx_air():
+    try:
+        for t in cli.command('stats-radio'):
+            m = re.search(r'"tx_air_secs"\s*:\s*(\d+(?:\.\d+)?)', t)
+            if m:
+                return float(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def discover():
+    """Send `discover.neighbors` (zero-hop). Returns a result dict; never raises on 'unsupported'."""
+    global _last_discover
+    s = _t
+    if not s or not s.get('running'):
+        raise RuntimeError('start a test first')
+    wait = _discover_min_interval() - (time.time() - _last_discover)
+    if wait > 0:
+        raise RuntimeError(f'discovery is rate-limited - try again in {round(wait)} s')
+    before = _tx_air()
+    lines = cli.command('discover.neighbors')
+    _last_discover = time.time()
+    text = ' '.join(lines)
+    res = {'ts': _last_discover, 'reply': text[:200], 'supported': 'unknown' not in text.lower()}
+    if res['supported']:
+        time.sleep(1.0)
+        after = _tx_air()
+        if before is not None and after is not None:
+            res['tx_air_s'] = round(after - before, 3)
+    s['discover'] = res
+    _emit('rtest_state', view())
+    return {'ok': True, 'discover': res}
+
+
 def _new_session(minutes, offline, assumed_tx):
     return {'running': True, 'start': time.time(), 'deadline': time.time() + minutes * 60,
             'minutes': minutes, 'offline': offline, 'prev_repeat': None, 'reason': None,
             'assumed_tx_dbm': assumed_tx, 'nb': {}, 'heard': [], 'recv0': None, 'recv_last': None,
-            'nf': [], 'our_tx_dbm': None, 'radio_cfg': None, 'restore_pending': False}
+            'nf': [], 'our_tx_dbm': None, 'radio_cfg': None, 'restore_pending': False,
+            'discover': None}
 
 
 def start(minutes=None, offline=None, assumed_tx_dbm=None):
@@ -227,6 +270,13 @@ def start(minutes=None, offline=None, assumed_tx_dbm=None):
         _t = s
         _stop.clear()
         cli.test_active.set()
+    if bool(_c('REP_TEST_DISCOVER', True)):
+        global _last_discover
+        _last_discover = 0.0
+        try:
+            discover()                                   # at initiation of the test
+        except Exception as e:
+            s['discover'] = {'supported': None, 'reply': str(e)}
     threading.Thread(target=_watchdog, args=(s,), daemon=True, name="rtest-watchdog").start()
     _emit('rtest_state', view())
     return {'ok': True, **view()}
@@ -354,7 +404,7 @@ def view():
     return {'running': s['running'], 'offline': s['offline'], 'minutes': s['minutes'],
             'remaining_s': max(0, round(s['deadline'] - time.time())) if s['running'] else 0,
             'reason': s['reason'], 'prev_repeat': s['prev_repeat'], 'assumed_tx_dbm': s['assumed_tx_dbm'],
-            'our_tx_dbm': s['our_tx_dbm'], 'radio_cfg': s['radio_cfg'],
+            'our_tx_dbm': s['our_tx_dbm'], 'radio_cfg': s['radio_cfg'], 'discover': s['discover'],
             'minutes_default': _minutes_default(), 'minutes_max': _minutes_max(),
             'restore_pending': s['restore_pending'] or os.path.exists(_marker()),
             'connected': bool(state.serial_connected),

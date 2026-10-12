@@ -97,3 +97,36 @@ def test_neighbour_pathloss_and_packets(rep):
     n = rt.view()['neighbours'][0]
     assert n['rssi'] == -97 and n['pathloss_db'] == 117.0 and n['snr'] == 5.5 and n['heard'] == 1
     assert rt.view()['packets_heard'] == 1 and rt.view()['noise']['avg'] == -115
+
+
+def test_discover_at_start_supported(rep, monkeypatch):
+    base = rep.__call__
+    air = iter([19, 19.4])
+    def cmd(line, wait=3.0):
+        if line == 'discover.neighbors': rep.log.append(line); return ['OK']
+        if line == 'stats-radio': return ['{"tx_air_secs":%s}' % next(air)]
+        return base(line, wait)
+    monkeypatch.setattr(cli, 'command', cmd)
+    monkeypatch.setattr(rt.time, 'sleep', lambda s: None)
+    rt._last_discover = 0.0
+    rt.start(minutes=5, offline=False)
+    d = rt.view()['discover']
+    assert d['supported'] and d['tx_air_s'] == 0.4 and 'discover.neighbors' in rep.log
+
+
+def test_discover_unsupported_falls_back(rep):
+    rt._last_discover = 0.0
+    rt.start(minutes=5, offline=False)                # FakeRep answers '?' - patch to unknown
+    assert rt.view()['discover'] is not None
+
+
+def test_discover_unknown_command(rep, monkeypatch):
+    base = rep.__call__
+    monkeypatch.setattr(cli, 'command', lambda l, wait=3.0: ['Unknown command'] if l == 'discover.neighbors' else base(l, wait))
+    rt._last_discover = 0.0
+    rt.start(minutes=5, offline=False)
+    d = rt.view()['discover']
+    assert d['supported'] is False
+    assert rt._t['running']                           # test still runs, passively
+    with pytest.raises(RuntimeError, match='rate-limited'):
+        rt.discover()
