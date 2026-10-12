@@ -10,6 +10,7 @@ from bridge.state import (node_db, message_log, aliases, geo_cache, mqtt_state,
 from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
+from bridge import testmode
 
 
 @app.route("/")
@@ -119,6 +120,55 @@ def api_telemetry():
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+# ---- neighbour discovery / test mode ------------------------------------------
+
+def _guard(fn):
+    """Run a testmode call, always answering with JSON (errors never leak a 500 page)."""
+    try:
+        return jsonify(fn())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e) or e.__class__.__name__})
+
+
+@app.route("/api/test/status")
+def api_test_status():
+    return _guard(testmode.status)
+
+
+@app.route("/api/test/targets")
+def api_test_targets():
+    return _guard(lambda: {"ok": True, "targets": testmode.list_targets()})
+
+
+@app.route("/api/neighbors/discover", methods=["POST"])
+def api_neighbors_discover():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: testmode.discover(d.get("types"), d.get("wait_s", 8)))
+
+
+@app.route("/api/neighbors/remote", methods=["POST"])
+def api_neighbors_remote():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: testmode.neighbours_of(d.get("to", ""), d.get("password", "")))
+
+
+@app.route("/api/test/link/start", methods=["POST"])
+def api_test_link_start():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: testmode.start_link_test(d.get("to", ""), d.get("password", "")))
+
+
+@app.route("/api/test/link/stop", methods=["POST"])
+def api_test_link_stop():
+    return _guard(testmode.stop_link_test)
+
+
+@app.route("/api/test/trace", methods=["POST"])
+def api_test_trace():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: testmode.traceroute(d.get("to", "")))
 
 
 @app.route("/api/aliases", methods=["GET"])
