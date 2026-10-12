@@ -318,3 +318,14 @@ fetch('/api/test/status').then(r => r.json()).then(s => {
     if (s.duty) document.getElementById('lt-duty').innerHTML = dutyHtml(s.duty);
   }
 }).catch(() => {});
+
+// Deep links (/#test, /#neighbors, /#map, /#log, ...) so other pages - e.g. the Home
+// Assistant dashboard iframes - can open the bridge straight on a tab.
+(function deepLinks(){
+  const go = () => {
+    const p = (location.hash || '').replace('#', '');
+    if (p && document.getElementById('page-' + p)) showPage(p);
+  };
+  window.addEventListener('hashchange', go);
+  go();
+})();

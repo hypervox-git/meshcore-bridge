@@ -66,6 +66,9 @@ Two new dashboard tabs (backend in `bridge/testmode.py`, duty-cycle maths in
   resolved against your repeater contacts; 1-byte hash collisions pick the nearest
   candidate and are flagged in the popup.
 
+Tabs can be deep-linked, e.g. `http://pinode:5001/#test` or `/#neighbors` (used by the
+Home Assistant dashboard views).
+
 ### Duty cycle
 
 Duty cycle is a per-transmitter limit, so every request is budgeted against **both** our
