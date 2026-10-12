@@ -6,8 +6,9 @@ library. Talks to a dedicated MeshCore companion node over USB serial; forwards
 DMs, channel messages, adverts (position), and telemetry to MQTT / Home Assistant,
 and reuses the dashboard, live map, breadcrumb trails and per-device MQTT view.
 
-**Status: import-tested foundation, NOT yet run against a MeshCore node.** See
-"Bring-up" below — the event→UI field mapping must be confirmed on your device.
+**Status: feature-complete foundation, tested against a mock node but NOT yet run
+against real MeshCore hardware.** See "Bring-up" below — the event→UI field mapping
+and the new Neighbours/Test features (below) must be confirmed on your device.
 
 ## What changed from the Meshtastic bridge
 
@@ -33,6 +34,18 @@ python3 -m venv .venv
 The companion node must be flashed as a **SERIAL** companion (a BLE-companion
 build can't be reached over serial). Runs on port **5001** so it can sit alongside
 the Meshtastic bridge (5000).
+
+### Updating a running install (e.g. on the Pi)
+
+Develop and push from your workstation, then pull on the host running the bridge.
+`config.py` and `*.json` are git-ignored, so a pull never touches your local config:
+
+```bash
+cd ~/meshcore-bridge && git pull && sudo systemctl restart meshcore-bridge
+```
+
+(`deploy/meshcore-bridge.service` is the systemd unit; adjust the path/service name to
+your install. Work in progress lives on feature branches - `git checkout <branch>` first.)
 
 ## Bring-up (do this first, on your node)
 
@@ -66,8 +79,36 @@ Two new dashboard tabs (backend in `bridge/testmode.py`, duty-cycle maths in
   resolved against your repeater contacts; 1-byte hash collisions pick the nearest
   candidate and are flagged in the popup.
 
-Tabs can be deep-linked, e.g. `http://pinode:5001/#test` or `/#neighbors` (used by the
-Home Assistant dashboard views).
+Tabs can be deep-linked, e.g. `http://<bridge-host>:5001/#test`, `/#neighbors`, `/#map`.
+
+### Home Assistant dashboard
+
+The two new tabs can be embedded in a Home Assistant dashboard with `iframe` cards in
+`panel` views (the deep links above select the tab):
+
+```yaml
+- title: Neighbours
+  path: neighbours
+  type: panel
+  icon: mdi:radar
+  cards:
+    - type: iframe
+      url: http://<bridge-host>:5001/#neighbors
+      aspect_ratio: 90%
+- title: Test
+  path: test
+  type: panel
+  icon: mdi:signal-variant
+  cards:
+    - type: iframe
+      url: http://<bridge-host>:5001/#test
+      aspect_ratio: 90%
+```
+
+Browsers block a plain-`http://` iframe inside an `https://` page, so this works when
+Home Assistant is opened over local `http://`; for an HTTPS front end, proxy the bridge
+behind the same TLS origin. The traceroute's "Show on map" switches to the bridge's own
+Map tab inside the embed - Home Assistant's native map cannot draw the path.
 
 ### Duty cycle
 
@@ -95,7 +136,8 @@ along the way retransmit it - their own (small) share is not tracked.
 - "Last RSSI/SNR" is the last packet each node received - normally our request / its
   reply, but other traffic can interleave.
 - Written against `meshcore` 2.3.x and tested against a mock node
-  (`pip install pytest && pytest tests/`). **Not yet run on real hardware** - confirm the
+  (`pip install pytest && pytest tests/` - covers the duty-cycle maths, discovery, link
+  test pacing/stop conditions, traceroute path building and the routes). **Not yet run on real hardware** - confirm the
   trace round-trip semantics and the discovery/status payloads on your node
   (`MESHCORE_DEBUG = True`).
 
