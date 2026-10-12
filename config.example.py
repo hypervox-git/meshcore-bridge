@@ -55,9 +55,9 @@ REP_TEST_DISCOVER         = True   # send `discover.neighbors` when a test start
 # --- Public repeater directory + simulated links (map) ---------------------------------
 LOCAL_NAME               = None   # our repeater's public name (e.g. "Ironhorse"); None = ask the repeater (`get name`)
 LOCAL_ANTENNA_GAIN_DBI   = None   # omni antenna gain; None = from directory/name, else 0
-# Directional antenna on OUR repeater (overrides the line above). Pattern is a cardioid-family
-# model: peak gain on the boresight, `front_back_db` lower directly behind. Example - a Moxon
-# pointed at 110 deg true (ESE), vertical polarisation:
+# Directional antenna on OUR repeater - OPTIONAL default; normally enter it on the web UI
+# (Test tab -> Antenna), which is saved in meshcore_antenna.json and overrides this field by field.
+# Cardioid-family pattern: peak gain on the boresight, `front_back_db` lower directly behind.
 LOCAL_ANTENNA = None             # e.g. {"type": "Moxon", "gain_dbi": 5.5, "azimuth_deg": 110, "front_back_db": 25}
 SIM_TX_DBM               = 20     # assumed TX power at both ends for the simulated link
 PUBLIC_NODES_URL         = "https://map.meshcore.io/api/v1/nodes"   # community map node list (JSON)

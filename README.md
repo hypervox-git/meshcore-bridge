@@ -146,8 +146,9 @@ refreshed daily; or point `PUBLIC_NODES_FILE` at your own JSON) and uses it to
 Each gets a simulated free-space link from us: `FSPL = 20log10(d km) + 20log10(f MHz) + 32.44`,
 path loss = FSPL - antenna gains, predicted RSSI = `SIM_TX_DBM` (20) - path loss. Heard neighbours are
 solid lines (also showing measured path loss and the excess over free space), public ones dashed.
-Our own antenna can be directional (`LOCAL_ANTENNA`, e.g. a Moxon: peak gain, boresight azimuth, front-to-back
-ratio): the gain used for each link is the pattern's value towards that repeater's bearing, and the lobe is drawn on
+Our own antenna can be directional (e.g. a Moxon: peak gain, boresight azimuth, front-to-back ratio). Enter it on the
+**Test tab -> Antenna** card (saved in the git-ignored `meshcore_antenna.json`, no restart); `LOCAL_ANTENNA` in `config.py`
+is only an optional default that the web UI overrides field by field: the gain used for each link is the pattern's value towards that repeater's bearing, and the lobe is drawn on
 the map. Remote antenna gain: a gain field in the directory if present, a figure like `6dBi` in the node name, else your
 `ANTENNA_GAIN_DBI` overrides, else 0 dBi (assumed). Free space is a best case - real paths only add
 loss. `/api/public/status` shows what the directory returned (count, last error, a sample record).

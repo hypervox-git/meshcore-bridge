@@ -130,3 +130,44 @@ def test_override_file_and_heard_aim(tmp_path, monkeypatch):
     cli.latest.update(neighbours=[])
     with pytest.raises(RuntimeError, match='no heard neighbours'):
         antenna.aim_heard()
+
+
+def test_antenna_defined_only_in_web_ui(tmp_path, monkeypatch):
+    from bridge import antenna
+    dirfile(tmp_path, monkeypatch, RECS)
+    cli.latest.update(name='Ironhorse', radio_cfg='869.618,62.5,8,8', neighbours=[])
+    cfg = {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'ANTENNA_FILE': str(tmp_path / 'ant.json')}      # nothing in config.py
+    for m in (publiclinks, antenna):
+        monkeypatch.setattr(m, '_c', lambda n, d: cfg.get(n, d))
+    assert publiclinks.local_info()['antenna']['directional'] is False                         # omni until entered
+    antenna.save({'type': 'Moxon', 'gain_dbi': '5.5', 'azimuth_deg': 470, 'front_back_db': 25, 'directional': True}, 'ui')
+    a = publiclinks.local_info()['antenna']
+    assert a['directional'] and a['type'] == 'Moxon' and a['azimuth_deg'] == 110.0 and a['azimuth_source'] == 'web UI'
+    antenna.save({'azimuth_deg': 200}, 'ui')                                                    # partial update keeps the rest
+    a = publiclinks.local_info()['antenna']
+    assert a['azimuth_deg'] == 200 and a['gain_dbi'] == 5.5 and a['front_back_db'] == 25
+    antenna.save({'directional': False}, 'ui')
+    assert publiclinks.local_info()['antenna']['directional'] is False
+    antenna.reset()
+    assert publiclinks.local_info()['antenna']['gain_dbi'] == 0.0
+
+
+def test_ui_overrides_config_field_by_field(tmp_path, monkeypatch):
+    from bridge import antenna
+    dirfile(tmp_path, monkeypatch, RECS)
+    cli.latest.update(name='Ironhorse', radio_cfg='869.618,62.5,8,8', neighbours=[])
+    cfg = {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'ANTENNA_FILE': str(tmp_path / 'ant.json'),
+           'LOCAL_ANTENNA': {'type': 'Moxon', 'gain_dbi': 5.5, 'azimuth_deg': 110, 'front_back_db': 25}}
+    for m in (publiclinks, antenna):
+        monkeypatch.setattr(m, '_c', lambda n, d: cfg.get(n, d))
+    antenna.save({'azimuth_deg': 95}, 'ui')
+    a = publiclinks.local_info()['antenna']
+    assert a['azimuth_deg'] == 95 and a['gain_dbi'] == 5.5 and a['azimuth_source'] == 'config.py + web UI'
+
+
+def test_antenna_validation():
+    from bridge import antenna
+    for bad in ({'gain_dbi': 99}, {'front_back_db': -3}, {'gain_dbi': 'abc'}):
+        with pytest.raises(ValueError):
+            antenna.validate(bad)
+    assert antenna.validate({'azimuth_deg': -10, 'type': ' Yagi '}) == {'azimuth_deg': 350.0, 'type': 'Yagi'}

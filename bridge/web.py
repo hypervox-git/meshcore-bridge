@@ -161,7 +161,9 @@ def api_plan_run():
 
 @app.route("/api/antenna")
 def api_antenna():
-    return _guard(lambda: {"ok": True, "override": antenna.override(), "antenna": publiclinks.local_info()["antenna"]})
+    import config
+    return _guard(lambda: {"ok": True, "override": antenna.override(), "config": getattr(config, "LOCAL_ANTENNA", None),
+                           "antenna": publiclinks.local_info()["antenna"]})
 
 
 @app.route("/api/antenna/aim", methods=["POST"])
@@ -172,6 +174,9 @@ def api_antenna_aim():
     def go():
         if mode == "reset":
             antenna.reset()
+            return {"ok": True, "antenna": publiclinks.local_info()["antenna"]}
+        if mode == "settings":                       # manual entry from the Test tab
+            antenna.save({k: d.get(k) for k in antenna.FIELDS if k in d}, "entered on the web UI")
             return {"ok": True, "antenna": publiclinks.local_info()["antenna"]}
         if mode == "azimuth":
             az, why, extra = float(d["azimuth"]), "manual", {}
@@ -184,7 +189,7 @@ def api_antenna_aim():
             extra = antenna.aim_heard()
             az, why = extra["azimuth_deg"], "aimed at heard neighbours"
         if d.get("apply", True):
-            antenna.save(az, why)
+            antenna.save({"azimuth_deg": az}, why)
         return dict(extra, ok=True, azimuth_deg=az, applied=bool(d.get("apply", True)),
                     antenna=publiclinks.local_info()["antenna"])
     return _guard(go)

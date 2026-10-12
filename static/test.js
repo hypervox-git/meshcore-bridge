@@ -621,7 +621,29 @@ function aimAt(mode){
       + (d.neighbours ? '<table class="nb-table"><tr><th>Heard neighbour</th><th>Bearing</th><th>Dist</th><th>Gain before</th><th>Gain after</th></tr>'
         + d.neighbours.map(n => '<tr><td>' + escHtml(n.name) + '</td><td>' + n.bearing_deg + '&deg;</td><td>' + n.distance_km + ' km</td><td>' + n.gain_now_dbi + ' dBi</td><td style="color:' + (n.gain_new_dbi > n.gain_now_dbi ? '#00e5a0' : '#ff9500') + '">' + n.gain_new_dbi + ' dBi</td></tr>').join('') + '</table>' : '')
       + '<div class="config-hint">This updates the model and map. Rotate the physical antenna to ' + (mode === 'reset' ? 'the config.py bearing' : d.azimuth_deg + '&deg; true') + ' to match.</div>';
+    antFill(d.antenna);
     if (typeof loadSim === 'function') loadSim();
     planPoll();
   }).catch(e => { out.textContent = 'Error: ' + e; });
 }
+
+// ---- manual antenna entry (Test tab) ---------------------------------------------------
+function antFill(a){
+  if (!a) return;
+  const set = (id, v) => { const e = document.getElementById(id); if (e && document.activeElement !== e && v != null) e.value = v; };
+  document.getElementById('ant-dir').checked = !!a.directional;
+  set('ant-type', a.type === 'omni' ? '' : a.type); set('ant-az', a.azimuth_deg); set('ant-gain', a.gain_dbi); set('ant-fb', a.front_back_db);
+  document.getElementById('ant-src').textContent = a.directional ? ('Current: ' + a.type + ' ' + a.gain_dbi + ' dBi aimed at ' + a.azimuth_deg + '\u00b0 true, F/B ' + a.front_back_db + ' dB (from ' + (a.azimuth_source || 'config') + ')')
+    : ('Current: omni ' + a.gain_dbi + ' dBi');
+}
+function antLoad(){ fetch('/api/antenna').then(r => r.json()).then(d => { if (d.ok) antFill(d.antenna); }).catch(() => {}); }
+function antSave(){
+  const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+  const body = {mode: 'settings', directional: document.getElementById('ant-dir').checked, type: document.getElementById('ant-type').value || (document.getElementById('ant-dir').checked ? 'Directional' : 'Omni'),
+                azimuth_deg: num('ant-az'), gain_dbi: num('ant-gain'), front_back_db: num('ant-fb')};
+  if (body.gain_dbi == null){ setStatus('ant-status', 'Enter the antenna gain (dBi)', 'err'); return; }
+  if (body.directional && body.azimuth_deg == null){ setStatus('ant-status', 'Enter the aim bearing', 'err'); return; }
+  post('/api/antenna/aim', body).then(d => { if (!d.ok){ setStatus('ant-status', d.error, 'err'); return; }
+    setStatus('ant-status', 'Saved', 'ok'); antFill(d.antenna); if (typeof loadSim === 'function') loadSim(); }).catch(e => setStatus('ant-status', 'Error: ' + e, 'err'));
+}
+antLoad();

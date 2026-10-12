@@ -94,13 +94,23 @@
   <div class="scroll-area"><div class="config-page">
     <div class="warning-box">Test mode transmits. Every request is paced against the duty-cycle limit for <b>both</b> your node and the target, using only a fixed share of the legal limit. Airtime figures are conservative estimates.</div>
 
+    <div class="config-section" id="ant-card">
+      <div class="config-title">Antenna (our repeater)</div>
+      <div class="config-hint" id="ant-src"></div>
+      <div class="config-row"><span class="config-label">Directional<div class="config-hint">Untick for an omni antenna</div></span><input id="ant-dir" type="checkbox" checked></div>
+      <div class="config-row"><span class="config-label">Type</span><input id="ant-type" type="text" class="config-num" maxlength="24" placeholder="Moxon"></div>
+      <div class="config-row"><span class="config-label">Aim / boresight (&deg; true)<div class="config-hint">Compass bearing the antenna points at, 0&ndash;360 clockwise from true north</div></span><input id="ant-az" type="number" min="0" max="360" step="1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Gain (dBi)</span><input id="ant-gain" type="number" min="-10" max="30" step="0.1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Front-to-back (dB)</span><input id="ant-fb" type="number" min="0" max="60" step="1" class="config-num"></div>
+      <div class="config-actions"><button class="btn btn-send" onclick="antSave()">Save antenna</button><button class="btn" onclick="aimAt('reset')">Reset to config.py</button><span class="send-status" id="ant-status"></span></div>
+    </div>
+
     <div class="config-section" id="plan-card">
       <div class="config-title">Line of sight &amp; antenna orientation planner</div>
       <div class="config-hint">Which public repeaters Ironhorse can see over the terrain (4/3-earth, Fresnel, 90 m elevation data, assumed mast heights), and which azimuth for a directional antenna reaches the most. A planning aid &mdash; buildings and trees are not modelled.</div>
       <div class="config-actions"><button class="btn btn-send" id="plan-btn" onclick="planRun()">Analyse</button>
         <button class="btn btn-share" onclick="aimAt('heard')">Aim at heard neighbours</button>
         <button class="btn" onclick="aimAt('best')">Use planner best</button>
-        <button class="btn" onclick="aimAt('reset')">Reset to config.py</button>
         <span class="send-status" id="plan-status"></span></div>
       <div id="aim-result" class="duty-note"></div>
       <div id="plan-results"></div>

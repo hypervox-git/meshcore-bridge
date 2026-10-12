@@ -32,16 +32,16 @@ def local_info():
         lat, lon, src = glat, glon, 'config'
     elif rec:
         lat, lon, src = rec['lat'], rec['lon'], 'public directory'
-    ant = _c('LOCAL_ANTENNA', None)
-    if isinstance(ant, dict) and ant.get('gain_dbi') is not None:
-        fb = float(ant.get('front_back_db', 25))
-        ov = antenna_cfg.override()                       # aim set from the web UI wins over config.py
-        antenna = {'type': ant.get('type', 'directional'), 'gain_dbi': float(ant['gain_dbi']),
-                   'azimuth_deg': float(ov['azimuth_deg'] if ov else ant.get('azimuth_deg', 0)) % 360,
-                   'azimuth_source': ('UI override: ' + str(ov.get('reason'))) if ov else 'config.py',
-                   'front_back_db': fb,
+    ant, asrc = antenna_cfg.effective(_c('LOCAL_ANTENNA', None))
+    if ant and ant.get('directional', True):
+        fb = float(ant['front_back_db'])
+        antenna = {'type': ant['type'], 'gain_dbi': float(ant['gain_dbi']), 'azimuth_deg': float(ant['azimuth_deg']) % 360,
+                   'azimuth_source': asrc, 'front_back_db': fb,
                    'beamwidth_deg': round(linkmodel.half_power_beamwidth_deg(fb), 0), 'directional': True}
-        gsrc = 'config: ' + str(antenna['type'])
+        gsrc = f"{asrc}: {antenna['type']}"
+    elif ant:                                           # defined, but marked omni
+        antenna = {'type': ant['type'], 'gain_dbi': float(ant['gain_dbi']), 'directional': False}
+        gsrc = f'{asrc}: omni'
     else:
         gain = _c('LOCAL_ANTENNA_GAIN_DBI', None)
         gsrc = 'config'
