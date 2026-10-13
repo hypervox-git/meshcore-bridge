@@ -554,7 +554,9 @@ function haversine(lat1,lon1,lat2,lon2){
 function renderRadar(){
   const svg=document.getElementById('radar-svg');const lbl=document.getElementById('radar-label');if(!svg) return;
   const W=380,H=220,cx=190,cy=110,maxR=95;
-  const nodeList=Object.values(nodes).filter(n=>n.id!==localNodeId);
+  // '!repeater' is the attached repeater itself (co-located with the PiNode). It has no position, so it was plotted from
+  // its own last RSSI / noise floor as if it were a distant node - misleading, so it is never drawn here.
+  const nodeList=Object.values(nodes).filter(n=>n.id!==localNodeId&&n.id!=='!repeater');
   if(!nodeList.length){svg.innerHTML='';lbl.textContent='Node map - waiting for remote nodes...';return;}
   const gpsNodes=nodeList.filter(n=>n.lat&&n.lon);const useGPS=gpsNodes.length>0;
   let maxDist=1;
@@ -576,9 +578,9 @@ function renderRadar(){
     const label=aliases[n.id]||n.name||n.id;let nx,ny;
     if(n.lat&&n.lon){
       const h=haversine(GATEWAY_LAT,GATEWAY_LON,n.lat,n.lon);
-      const r=Math.max(8,Math.round((h.dist/maxDist)*maxR));
+      const r=Math.max(8,(h.dist/maxDist)*maxR);
       const angle=(h.bearing-90)*Math.PI/180;
-      nx=Math.round(cx+r*Math.cos(angle));ny=Math.round(cy+r*Math.sin(angle));
+      nx=cx+r*Math.cos(angle);ny=cy+r*Math.sin(angle);
       if(n.trail&&n.trail.length>1){
         for(let i=1;i<n.trail.length;i++){
           const tp=n.trail[i-1];const tc=n.trail[i];
@@ -593,13 +595,13 @@ function renderRadar(){
     } else {
       const r=n.rssi?rssiToR(n.rssi):Math.round(maxR*0.6);
       const angle=angleStep*rssiIdx-Math.PI/2;
-      nx=Math.round(cx+r*Math.cos(angle));ny=Math.round(cy+r*Math.sin(angle));rssiIdx++;
+      nx=cx+r*Math.cos(angle);ny=cy+r*Math.sin(angle);rssiIdx++;
     }
-    nx=Math.max(10,Math.min(W-10,nx));ny=Math.max(10,Math.min(H-10,ny));
+    nx=+Math.max(10,Math.min(W-10,nx)).toFixed(2);ny=+Math.max(10,Math.min(H-10,ny)).toFixed(2);
     const lx=nx+(nx>=cx?8:-8);const anchor=nx>=cx?'start':'end';
     out+='<line x1="'+cx+'" y1="'+cy+'" x2="'+nx+'" y2="'+ny+'" stroke="'+col+'" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>';
     out+='<circle cx="'+nx+'" cy="'+ny+'" r="5" fill="'+col+'" opacity="0.9"/>';
-    out+='<text x="'+lx+'" y="'+(ny-6)+'" font-size="9" fill="#c8d0dc" font-family="monospace" text-anchor="'+anchor+'">'+label+'</text>';
+    out+='<text x="'+lx+'" y="'+(ny-6)+'" font-size="9" fill="#c8d0dc" font-family="monospace" text-anchor="'+anchor+'">'+escHtml(String(label))+'</text>';
     if(n.rssi) out+='<text x="'+lx+'" y="'+(ny+5)+'" font-size="8" fill="'+col+'" font-family="monospace" text-anchor="'+anchor+'">'+n.rssi+'dBm</text>';
   });
   svg.innerHTML=out;
@@ -810,3 +812,38 @@ function loadNodes(){
 }
 
 loadNodes();loadChannels();
+
+// ---- Node map: mouse-wheel zoom (at the cursor), drag to pan, double-click to reset ----------------
+// Works on the SVG viewBox, so renderRadar() can keep redrawing the contents without losing the view.
+(function radarZoom(){
+  const svg=document.getElementById('radar-svg'),hint=document.getElementById('radar-hint');if(!svg) return;
+  const W=380,H=220,MAXZ=16;let vb={x:0,y:0,w:W,h:H},drag=null;
+  function apply(){
+    vb.w=Math.min(W,Math.max(W/MAXZ,vb.w));vb.h=vb.w*H/W;
+    vb.x=Math.min(W-vb.w,Math.max(0,vb.x));vb.y=Math.min(H-vb.h,Math.max(0,vb.y));
+    svg.setAttribute('viewBox',vb.x.toFixed(2)+' '+vb.y.toFixed(2)+' '+vb.w.toFixed(2)+' '+vb.h.toFixed(2));
+    if(hint) hint.textContent=vb.w<W-0.01?'x'+(W/vb.w).toFixed(1)+' - drag to pan, double-click to reset':'scroll to zoom, drag to pan';
+    svg.classList.toggle('radar-zoomed',vb.w<W-0.01);
+  }
+  function frac(ev){const r=svg.getBoundingClientRect();return {fx:(ev.clientX-r.left)/(r.width||1),fy:(ev.clientY-r.top)/(r.height||1),rw:r.width||1,rh:r.height||1};}
+  svg.addEventListener('wheel',ev=>{
+    ev.preventDefault();
+    const f=frac(ev),dy=ev.deltaY*(ev.deltaMode===1?16:ev.deltaMode===2?100:1),k=Math.exp(Math.max(-300,Math.min(300,dy))*0.0016);
+    const px=vb.x+f.fx*vb.w,py=vb.y+f.fy*vb.h;            // SVG point under the cursor stays put
+    vb.w=Math.min(W,Math.max(W/MAXZ,vb.w*k));vb.h=vb.w*H/W;vb.x=px-f.fx*vb.w;vb.y=py-f.fy*vb.h;apply();
+  },{passive:false});
+  svg.addEventListener('pointerdown',ev=>{
+    if(ev.button!==undefined&&ev.button!==0) return;
+    drag={sx:ev.clientX,sy:ev.clientY,x:vb.x,y:vb.y};
+    try{svg.setPointerCapture(ev.pointerId);}catch(e){}
+    svg.classList.add('radar-drag');
+  });
+  svg.addEventListener('pointermove',ev=>{
+    if(!drag) return;const f=frac(ev);
+    vb.x=drag.x-(ev.clientX-drag.sx)/f.rw*vb.w;vb.y=drag.y-(ev.clientY-drag.sy)/f.rh*vb.h;apply();
+  });
+  const end=()=>{drag=null;svg.classList.remove('radar-drag');};
+  svg.addEventListener('pointerup',end);svg.addEventListener('pointercancel',end);
+  svg.addEventListener('dblclick',()=>{vb={x:0,y:0,w:W,h:H};apply();});
+  apply();
+})();
