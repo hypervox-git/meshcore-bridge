@@ -211,7 +211,6 @@ def test_pattern_symmetric_about_boresight():
 
 
 def test_every_repeater_within_20km_is_listed(tmp_path, monkeypatch):
-    import math
     near = [{'public_key': '%08x' % (0x10000000 + i) + '00' * 28, 'adv_name': f'Near {i}', 'adv_lat': 51.30 + 0.01 * i,
              'adv_lon': -2.90, 'type': 2} for i in range(1, 16)]                    # 15 repeaters, 1.1 to 16.7 km north
     far = [{'public_key': 'ffee%04x' % i + '00' * 28, 'adv_name': f'Far {i}', 'adv_lat': 51.30 + 0.25 + 0.01 * i,
