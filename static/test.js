@@ -33,7 +33,9 @@ function loadTargets(){
   const orig = showPage;
   showPage = function(name){
     orig(name);
+    try { history.replaceState(null, '', '#' + name); } catch (e) {}       // a reload (or a bookmark) reopens the same tab
     if (name === 'test' || name === 'neighbors') loadTargets();
+    if (name === 'test') testNav();
   };
 })();
 
@@ -977,3 +979,15 @@ socket.on('mqtt_monitor', d => { d.suggestions = d.suggestions || (mqState && mq
 document.getElementById('mq-filter').addEventListener('input', e => { e.target.dataset.touched = '1';
   if (mqState) document.getElementById('mq-sub').disabled = !!(mqState.subscribed && mqState.active_filter === e.target.value.trim()); });
 mqLoad();
+
+// ---- Test page: quick-jump bar (the page is a long stack of cards) ----
+const TEST_CARDS = [['ant-card', 'Antenna'], ['steer-card', 'Steering'], ['mount-card', 'Mount'], ['plan-card', 'Planner'],
+                    ['rep-card', 'Repeater test'], ['lt-card', 'Link test'], ['tr-card', 'Traceroute']];
+function testNav(){
+  const page = document.querySelector('#page-test .config-page'); if (!page) return;
+  let bar = document.getElementById('test-jump');
+  if (!bar){ bar = document.createElement('div'); bar.id = 'test-jump'; bar.className = 'jump-bar'; page.insertBefore(bar, page.firstChild); }
+  bar.innerHTML = TEST_CARDS.filter(c => { const e = document.getElementById(c[0]); return e && e.style.display !== 'none'; })
+    .map(c => '<a href="#" onclick="testJump(\'' + c[0] + '\');return false">' + c[1] + '</a>').join('');
+}
+function testJump(id){ const e = document.getElementById(id); if (e) e.scrollIntoView({behavior: 'smooth', block: 'start'}); }

@@ -132,3 +132,12 @@ def test_routes(env):
     assert d['ok'] and d['subscribed']
     assert c.post('/api/mqtt/unsubscribe').get_json()['subscribed'] is False
     assert c.post('/api/mqtt/clear').get_json()['ok']
+
+
+def test_dashboard_page_renders_with_bridge_topic(env):
+    from bridge import web  # noqa: F401
+    from bridge.extensions import app
+    r = app.test_client().get('/')
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and 'mqttTopic:' in html and 'data-page="mqtt"' in html
+    assert 'nb-remote' not in html and 'lora-region' not in html

@@ -1,4 +1,4 @@
-"""Meshtastic serial-to-MQTT bridge (modular). Version 1.13.0."""
+"""MeshCore serial-to-MQTT bridge and web dashboard."""
 
 
 def cli_ref():

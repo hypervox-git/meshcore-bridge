@@ -2,8 +2,8 @@
 #
 # MeshCore's Python library is asyncio-based, so we run its event loop in a
 # dedicated thread and marshal outbound sends onto that loop. Inbound events are
-# translated into the SAME data shapes the (Meshtastic-derived) dashboard already
-# understands — a 'packet' with decoded.text for messages, decoded.position for
+# translated into the data shapes the dashboard
+# uses — a 'packet' with decoded.text for messages, decoded.position for
 # adverts, per-node telemetry — so the UI, map, trails and MQTT view are reused.
 #
 # NOTE: exact payload dict keys vary by firmware / library version. Every field

@@ -59,7 +59,7 @@ def publish_ha_discovery(node_id, name):
     safe = node_id.replace('!', '').replace(':', '_')
     display = name or node_id
     device = {"identifiers": [f"meshtastic_{safe}"], "name": display,
-               "model": "Meshtastic Node", "manufacturer": "Meshtastic"}
+               "model": "MeshCore node", "manufacturer": "MeshCore"}
     for key, fname, unit, dev_class, state_class in [
         ("battery", "Battery", "%",   "battery",         "measurement"),
         ("rssi",    "RSSI",    "dBm", "signal_strength",  "measurement"),

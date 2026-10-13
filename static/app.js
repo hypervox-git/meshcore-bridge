@@ -19,8 +19,6 @@ let GATEWAY_LAT = window.BRIDGE_CONFIG.gatewayLat;
 let GATEWAY_LON = window.BRIDGE_CONFIG.gatewayLon;
 const TRAIL_MAX   = window.BRIDGE_CONFIG.trailMax;
 
-const MODEM_PRESETS = {0:'LONG_FAST',1:'LONG_SLOW',2:'VERY_LONG_SLOW',3:'MEDIUM_SLOW',4:'MEDIUM_FAST',5:'SHORT_SLOW',6:'SHORT_FAST',7:'LONG_MODERATE'};
-const REGION_CODES  = {0:'UNSET',1:'US',2:'EU_433',3:'EU_868',4:'CN',5:'JP',6:'ANZ',7:'KR',8:'TW',9:'RU',10:'IN',11:'NZ_865',12:'TH',13:'LORA_24',14:'UA_433',15:'UA_868',16:'MY_433',17:'MY_919',18:'SG_923'};
 
 function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB')}
 setInterval(tick,1000);tick();
@@ -41,10 +39,10 @@ loadSysinfo();setInterval(loadSysinfo,10000);
 
 function updateNotifBtn(){
   const btn=document.getElementById('notif-btn');
-  if(!('Notification' in window)){btn.textContent='No notif';btn.className='hdr-btn denied';return;}
-  if(Notification.permission==='granted'&&notificationsEnabled){btn.textContent='Notify on';btn.className='hdr-btn on';}
-  else if(Notification.permission==='denied'){btn.textContent='Blocked';btn.className='hdr-btn denied';}
-  else{btn.textContent='Notify';btn.className='hdr-btn';}
+  if(!('Notification' in window)){btn.textContent='Alerts n/a';btn.title='This browser cannot show desktop notifications';btn.className='hdr-btn denied';return;}
+  if(Notification.permission==='granted'&&notificationsEnabled){btn.textContent='Alerts on';btn.title='Desktop notification for each new message. Click to turn off.';btn.className='hdr-btn on';}
+  else if(Notification.permission==='denied'){btn.textContent='Alerts blocked';btn.title='The browser is blocking notifications for this site. Click the padlock in the address bar, allow Notifications, then reload.';btn.className='hdr-btn denied';}
+  else{btn.textContent='Alerts off';btn.title='Click to get a desktop notification for each new message';btn.className='hdr-btn';}
 }
 function toggleNotif(){
   if(!('Notification' in window)) return;
@@ -80,7 +78,7 @@ socket.on('packet',(data)=>{
     if(activePage!=='ch-'+chIdx){markUnread(chIdx);const chName=channelMap[chIdx]?channelMap[chIdx].name||('ch'+chIdx):'ch'+chIdx;const nodeName=(nodes[from]&&(aliases[from]||nodes[from].name))||from;pushNotif(nodeName+' ['+chName+']',text);}
   }
 });
-socket.on('channels',(data)=>{channelMap={};data.forEach(ch=>{channelMap[ch.index]=ch;});buildChannelPages(data);renderChannelList(data);});
+socket.on('channels',(data)=>{channelMap={};data.forEach(ch=>{channelMap[ch.index]=ch;});buildChannelPages(data);});
 socket.on('local_node',(data)=>{localNodeId=data.id;});
 socket.on('aliases',(data)=>{Object.assign(aliases,data);renderNodes();});
 socket.on('node_link',(d)=>{
@@ -266,113 +264,15 @@ function showMap(){
   },120);
 }
 
-// ---- LoRa config ----
-function populateLoraSelects(){
-  const rs=document.getElementById('lora-region');
-  const ps=document.getElementById('lora-preset');
-  if(rs.options.length===0){
-    Object.entries(REGION_CODES).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v;rs.appendChild(o);});
-    Object.entries(MODEM_PRESETS).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v;ps.appendChild(o);});
-  }
-}
-
-function setToggle(id, val){
-  const t=document.getElementById(id);const l=document.getElementById(id+'-label');
-  if(!t) return;
-  if(val){t.classList.add('on');if(l)l.textContent='on';}
-  else{t.classList.remove('on');if(l)l.textContent='off';}
-}
-
-function getToggle(id){return document.getElementById(id)&&document.getElementById(id).classList.contains('on');}
-
-function toggleBool(id){
-  const t=document.getElementById(id);const l=document.getElementById(id+'-label');
-  if(!t) return;
-  const now=t.classList.toggle('on');
-  if(l) l.textContent=now?'on':'off';
-}
-
-function loadLora(){
-  populateLoraSelects();
-  setStatus('lora-status','Loading...','');
-  fetch('/api/lora').then(r=>r.json()).then(d=>{
-    if(d.error){setStatus('lora-status',d.error,'err');return;}
-    document.getElementById('lora-region').value=d.region;
-    document.getElementById('lora-preset').value=d.modem_preset;
-    document.getElementById('lora-tx-power').value=d.tx_power;
-    document.getElementById('lora-hop-limit').value=d.hop_limit;
-    setToggle('lora-tx-enabled',    d.tx_enabled);
-    setToggle('lora-rx-boost',      d.sx126x_rx_boosted_gain);
-    setToggle('lora-ignore-mqtt',   d.ignore_mqtt);
-    setToggle('lora-use-preset',    d.use_preset);
-    setStatus('lora-status','','');
-  }).catch(e=>setStatus('lora-status','Error: '+e,'err'));
-}
-
-function saveLora(){
-  if(!confirm('Apply LoRa changes?\n\nThe bridge releases the serial port, the node reboots, then the bridge reacquires. If it does not come back, a hard power-cycle of the Heltec may be required.')) return;
-  setStatus('lora-status','Applying + releasing port...','');
-  const params={
-    region:      parseInt(document.getElementById('lora-region').value),
-    modem_preset:parseInt(document.getElementById('lora-preset').value),
-    tx_power:    parseInt(document.getElementById('lora-tx-power').value),
-    hop_limit:   parseInt(document.getElementById('lora-hop-limit').value),
-    tx_enabled:          getToggle('lora-tx-enabled'),
-    sx126x_rx_boosted_gain: getToggle('lora-rx-boost'),
-    ignore_mqtt:         getToggle('lora-ignore-mqtt'),
-    use_preset:          getToggle('lora-use-preset'),
-  };
-  fetch('/api/lora',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)})
-    .then(r=>r.json()).then(d=>{
-      if(d.ok){setStatus('lora-status','Applied. Node rebooting, reacquiring port...','ok');pollLoraReconnect(0);}
-      else setStatus('lora-status','Error: '+d.error,'err');
-    }).catch(e=>setStatus('lora-status','Error: '+e,'err'));
-}
-
-function pollLoraReconnect(tries){
-  if(tries>20){setStatus('lora-status','No reconnect after ~60s - power-cycle the Heltec, then Refresh.','err');return;}
-  setTimeout(()=>{
-    fetch('/api/lora').then(r=>r.json()).then(d=>{
-      if(d && !d.error){setStatus('lora-status','Reconnected - config reloaded.','ok');loadLora();}
-      else pollLoraReconnect(tries+1);
-    }).catch(()=>pollLoraReconnect(tries+1));
-  },3000);
-}
-
-// ---- Security ----
-function loadSecurity(){
-  document.getElementById('sec-items').innerHTML='<div class="empty-state">Assessing...</div>';
-  fetch('/api/security').then(r=>r.json()).then(d=>{
-    const pct=d.score;
-    const col=pct>=80?'#00e5a0':pct>=50?'#ff9500':'#ff3b3b';
-    document.getElementById('sec-score-num').textContent=pct+'%';
-    document.getElementById('sec-score-num').style.color=col;
-    document.getElementById('sec-score-fill').style.width=pct+'%';
-    document.getElementById('sec-score-fill').style.background=col;
-    document.getElementById('sec-score-label2').textContent=pct>=80?'Good security posture':pct>=50?'Some improvements recommended':'Action required';
-    document.getElementById('sec-items').innerHTML=d.items.map(item=>
-      '<div class="sec-item">'
-      +'<div class="sec-item-header">'
-      +'<div class="sec-status '+(item.passed?'pass':'fail')+'">'+(item.passed?'✓':'✗')+'</div>'
-      +'<div class="sec-item-title">'+item.title+'</div>'
-      +'</div>'
-      +'<div class="sec-item-desc">'+item.desc+'</div>'
-      +(!item.passed?'<div class="sec-item-rec">'+item.recommendation+'</div>':'')
-      +(item.public_mesh_note?'<div class="sec-item-note">Public mesh note: '+item.public_mesh_note+'</div>':'')
-      +'</div>'
-    ).join('');
-  }).catch(e=>{document.getElementById('sec-items').innerHTML='<div class="empty-state">Error: '+e+'</div>';});
-}
-
 // ---- Channel pages ----
 function buildChannelPages(channels){
   document.querySelectorAll('.nav-tab[data-page^="ch-"]').forEach(t=>t.remove());
   document.querySelectorAll('.page[id^="page-ch-"]').forEach(p=>p.remove());
-  const nav=document.getElementById('main-nav');const mgr=nav.querySelector('[data-page="channels-mgr"]');
+  const nav=document.getElementById('main-nav');
   channels.forEach(ch=>{
     const pid='ch-'+ch.index;const label='['+ch.index+'] '+(ch.name||'unnamed');
     const tab=document.createElement('div');tab.className='nav-tab';tab.dataset.page=pid;tab.onclick=()=>showPage(pid);
-    tab.innerHTML=label+'<span class="pip" id="pip-'+ch.index+'"></span>';nav.insertBefore(tab,mgr);
+    tab.innerHTML=label+'<span class="pip" id="pip-'+ch.index+'"></span>';nav.insertBefore(tab,nav.querySelector('[data-page="log"]'));
     const page=document.createElement('div');page.className='page';page.id='page-'+pid;
     page.innerHTML='<div class="chat-wrap">'
       +'<div class="chat-header"><span>'+label+'</span><span class="badge">'+(ch.role||'SECONDARY')+'</span></div>'
@@ -629,7 +529,7 @@ function loadMqttInfo(){
     const conn=d.connected?'<span class="good">connected</span>':'<span class="bad">disconnected</span>';
     let html='<div class="mqtt-status">Broker <code>'+d.broker+'</code> &middot; root <code>'+d.topic_root+'</code> &middot; '+conn+' &middot; HA discovery '+(d.ha_discovery?'on':'off')+'</div>';
     const ids=Object.keys(d.nodes||{});
-    if(!ids.length){c.innerHTML=html+'<div class="empty-state">No devices have published to MQTT yet.<br>Only channels PINO can decrypt are republished.</div>';return;}
+    if(!ids.length){c.innerHTML=html+'<div class="empty-state">No devices have published to MQTT yet. Open the MQTT tab to watch the raw messages.</div>';return;}
     ids.sort((a,b)=>(d.nodes[b].ts||0)-(d.nodes[a].ts||0));
     html+=ids.map(id=>{
       const n=d.nodes[id];const nm=aliases[id]||(nodes[id]&&nodes[id].name)||id;
@@ -664,7 +564,7 @@ function exportCSV(){
   });
   const csv=rows.map(r=>r.join(',')).join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='meshtastic_log.csv';
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='meshcore_log.csv';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
@@ -697,54 +597,12 @@ function formatContent(data){
 }
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
-function renderChannelList(channels){
-  document.getElementById('ch-list').innerHTML=channels.length?channels.map(ch=>
-    '<div class="ch-item" id="chitem-'+ch.index+'">'
-    +'<div class="ch-item-header"><span class="ch-index">'+ch.index+'</span><span class="ch-name">'+(ch.name||'(unnamed)')+'</span><span class="ch-role">'+ch.role+'</span><span class="ch-psk">'+ch.psk_type+'</span></div>'
-    +'<div class="ch-actions"><button class="btn btn-share" onclick="toggleShare('+ch.index+',\''+escHtml(ch.name||'channel')+'\')" style="padding:5px 12px;font-size:10px">Share</button>'
-    +'<button class="btn btn-danger" onclick="deleteChannel('+ch.index+')" '+(ch.index===0?'disabled':'')+' style="padding:5px 12px;font-size:10px">Delete</button></div>'
-    +'<div class="share-panel" id="share-'+ch.index+'"></div></div>'
-  ).join(''):'<div class="empty-state">No channels</div>';
-}
-
-function toggleShare(idx,name){
-  const panel=document.getElementById('share-'+idx);if(!panel) return;
-  if(panel.classList.contains('open')){panel.classList.remove('open');return;}
-  panel.innerHTML='<div class="share-title">Loading...</div>';panel.classList.add('open');
-  fetch('/api/channels/'+idx+'/url').then(r=>r.json()).then(d=>{
-    if(!d.url){panel.innerHTML='<div class="share-title" style="color:var(--danger)">Could not retrieve URL</div>';return;}
-    const url=d.url;
-    panel.innerHTML='<div class="share-title">Share: '+escHtml(name)+'</div>'
-      +'<div class="share-url" id="shareurl-'+idx+'">'+escHtml(url)+'</div>'
-      +'<div class="share-actions"><button class="btn btn-share" onclick="copyUrl('+idx+')" style="padding:5px 14px;font-size:10px">Copy URL</button>'
-      +'<a class="btn" href="/api/channels/'+idx+'/qr" target="_blank" style="padding:5px 14px;font-size:10px;text-decoration:none;display:inline-block">Download QR</a>'
-      +'<span class="send-status" id="copy-status-'+idx+'"></span></div>'
-      +'<img class="share-qr" src="/api/channels/'+idx+'/qr" alt="QR" />'
-      +'<div class="share-hint">Meshtastic app: menu > Import channel > scan QR or paste URL.</div>';
-  }).catch(()=>{panel.innerHTML='<div class="share-title" style="color:var(--danger)">Error</div>';});
-}
-function copyUrl(idx){
-  const el=document.getElementById('shareurl-'+idx);if(!el) return;const text=el.textContent.trim();
-  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(()=>setStatus('copy-status-'+idx,'Copied','ok')).catch(()=>fallbackCopy(text,idx));
-  else fallbackCopy(text,idx);
-}
-function fallbackCopy(text,idx){const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');setStatus('copy-status-'+idx,'Copied','ok');}catch(e){setStatus('copy-status-'+idx,'Manual copy','err');}document.body.removeChild(ta);}
-
-function loadChannels(){fetch('/api/channels').then(r=>r.json()).then(data=>{channelMap={};data.forEach(ch=>{channelMap[ch.index]=ch;});buildChannelPages(data);renderChannelList(data);});}
-function addChannel(){
-  const name=document.getElementById('new-ch-name').value.trim();if(!name){setStatus('ch-status','Enter a name','err');return;}
-  fetch('/api/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById('new-ch-name').value='';setStatus('ch-status','Added','ok');loadChannels();}else setStatus('ch-status',d.error,'err');});
-}
-function deleteChannel(index){
-  if(!confirm('Delete channel '+index+'?')) return;
-  fetch('/api/channels/'+index,{method:'DELETE'}).then(r=>r.json()).then(d=>{if(d.ok){setStatus('ch-status','Deleted','ok');loadChannels();}else setStatus('ch-status',d.error,'err');});
-}
 function setStatus(id,msg,type){const el=document.getElementById(id);if(!el) return;el.textContent=msg;el.className='send-status'+(type==='ok'?' send-ok':type==='err'?' send-err':'');if(type) setTimeout(()=>{el.textContent='';el.className='send-status'},3000);}
 
 const API_ENDPOINTS=[
   {method:'GET',path:'/',desc:'Main dashboard UI'},
   {method:'GET',path:'/api/sysinfo',desc:'Pi CPU, RAM, temp, uptime'},
-  {method:'GET',path:'/api/nodes',desc:'Live node list from Meshtastic interface'},
+  {method:'GET',path:'/api/nodes',desc:'Live node list (contacts, adverts and measured links)'},
   {method:'GET',path:'/api/nodedb',desc:'Persistent node database'},
   {method:'GET',path:'/api/mqtt',desc:'Per-device MQTT publish state (topic, last values, count) + broker status'},
   {method:'GET',path:'/api/poshist',desc:'Round-robin position history (>=28d). ?node=<id> for one nodes trail; no arg = per-node counts'},
@@ -790,10 +648,11 @@ function flushNodeDb(){
 }
 
 function renderApiDocs(){
+  const T=window.BRIDGE_CONFIG.mqttTopic||'meshcore';
   document.getElementById('api-docs-content').innerHTML=
     '<div style="padding-bottom:.75rem;font-size:10px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase">REST API</div>'
     +API_ENDPOINTS.map(e=>'<div class="api-endpoint"><span class="api-method method-'+e.method.toLowerCase()+'">'+e.method+'</span><span class="api-path">'+e.path+'</span><div class="api-desc">'+e.desc+'</div></div>').join('')
-    +'<div style="padding:.75rem 0;font-size:10px;color:var(--text-muted)">MQTT: meshtastic/nodes | /text | /telemetry | /position | /ch0..chN<br>Inject: publish to meshtastic/send with JSON {text, channel}</div>';
+    +'<div style="padding:.75rem 0;font-size:10px;color:var(--text-muted)">MQTT: '+T+'/nodes | /text | /telemetry | /position | /ch0..chN<br>Inject: publish to '+T+'/send with JSON {text, channel}</div>';
 }
 
 function loadNodes(){
@@ -823,7 +682,9 @@ function loadNodes(){
   fetch('/api/aliases').then(r=>r.json()).then(d=>Object.assign(aliases,d)).catch(()=>{});
 }
 
-loadNodes();loadChannels();
+loadNodes();
+function loadChannels(){fetch('/api/channels').then(r=>r.json()).then(data=>{channelMap={};data.forEach(ch=>{channelMap[ch.index]=ch;});buildChannelPages(data);}).catch(()=>{});}
+loadChannels();
 
 // ---- Node map: mouse-wheel zoom (at the cursor), drag to pan, double-click to reset ----------------
 // Works on the SVG viewBox, so renderRadar() can keep redrawing the contents without losing the view.

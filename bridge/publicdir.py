@@ -8,7 +8,6 @@
 # directory record if one exists, a "5dBi"-style figure in the node's name/description, then
 # your own ANTENNA_GAIN_DBI overrides (config.py). Otherwise 0 dBi is assumed.
 import json
-import os
 import re
 import threading
 import time

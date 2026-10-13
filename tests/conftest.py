@@ -23,3 +23,18 @@ def _isolate_public_directory():
     yield
     publicdir._nodes.clear()
     publicdir.FILE = None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_runtime_files(tmp_path, monkeypatch):
+    """No test may write the bridge's runtime JSON files (meshcore_*.json) into the repo directory."""
+    from bridge import antenna, mqtt_monitor, nbtable, skywatcher, steer
+    for mod, name in ((antenna, 'ant'), (steer, 'steer'), (skywatcher, 'mount'), (mqtt_monitor, 'mqmon'), (nbtable, 'nb')):
+        monkeypatch.setattr(mod, '_file', lambda p=str(tmp_path / (name + '.json')): p)
+    from bridge import state
+    for attr in ('MSG_LOG_FILE', 'NODE_DB_FILE', 'ALIAS_FILE', 'POS_HIST_FILE'):
+        monkeypatch.setattr(state, attr, str(tmp_path / (attr.lower() + '.json')))
+    nbtable._entries.clear()
+    nbtable._meta.clear()
+    mqtt_monitor._buf.clear()
+    yield

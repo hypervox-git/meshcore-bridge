@@ -6,9 +6,22 @@ library. Talks to a dedicated MeshCore companion node over USB serial; forwards
 DMs, channel messages, adverts (position), and telemetry to MQTT / Home Assistant,
 and reuses the dashboard, live map, breadcrumb trails and per-device MQTT view.
 
-**Status: feature-complete foundation, tested against a mock node but NOT yet run
-against real MeshCore hardware.** See "Bring-up" below — the event→UI field mapping
-and the new Neighbours/Test features (below) must be confirmed on your device.
+**Status:** Repeater mode (read-only CLI polling of a repeater node) is in use on real hardware
+(Heltec V3 on a Raspberry Pi). Companion mode is tested against a mock node only, so confirm the
+event-to-UI field mapping on your device (see "Bring-up").
+
+## Pages
+
+| Tab | What it does |
+|---|---|
+| Dashboard | Live stats, zoomable node map, node list; **Update neighbour table** button |
+| Map | Public repeaters and simulated links, antenna beam and ghost patterns, steer from a repeater's popup |
+| Neighbours | Discover table and the persistent neighbour table (public database + heard state) |
+| Test | Antenna, steering, Sky-Watcher mount, site planner, repeater/link tests (quick-jump bar at the top) |
+| MQTT | Raw MQTT messages under the bridge topic, Subscribe / Unsubscribe |
+| Log / API | Packet log with CSV export; REST endpoint list |
+
+The page you are on is kept in the URL (`/#mqtt`, `/#test`, ...), so a reload or a bookmark reopens it.
 
 ## What changed from the Meshtastic bridge
 

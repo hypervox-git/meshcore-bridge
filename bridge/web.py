@@ -4,6 +4,8 @@ from flask import jsonify, request, render_template
 from config import (SERIAL_PORT, GATEWAY_LAT, GATEWAY_LON, MAX_TRAIL, NODE_DB_FILE,
                     POS_HIST_FILE, POS_HIST_DAYS, MQTT_BROKER, MQTT_PORT, MQTT_TOPIC,
                     HA_DISCOVERY, ALIAS_FILE)
+import time
+
 from bridge import state
 from bridge.state import (node_db, message_log, aliases, geo_cache, mqtt_state,
                           pos_history, position_trails, save_json)
@@ -18,7 +20,7 @@ from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan
 def index():
     return render_template("index.html", serial_port=SERIAL_PORT,
                            gateway_lat=GATEWAY_LAT, gateway_lon=GATEWAY_LON,
-                           trail_max=MAX_TRAIL)
+                           trail_max=MAX_TRAIL, mqtt_topic=MQTT_TOPIC)
 
 
 @app.route("/api/sysinfo")
@@ -96,7 +98,7 @@ def api_poshist():
 @app.route("/api/send", methods=["POST"])
 def api_send():
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         text = (data.get("text") or "").strip()
         if not text:
             return jsonify({"ok": False, "error": "Empty"})
@@ -107,7 +109,7 @@ def api_send():
         else:
             mc.send_channel(channel, text)
         from bridge.state import append_message
-        append_message({"ts": __import__("time").time() * 1000, "from": "[me]",
+        append_message({"ts": time.time() * 1000, "from": "[me]",
                         "text": text, "channel": channel, "sent": True})
         return jsonify({"ok": True})
     except Exception as e:
@@ -388,7 +390,7 @@ def api_aliases_get():
 
 @app.route("/api/aliases", methods=["POST"])
 def api_aliases_post():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     nid = (data.get("id") or "").strip()
     name = (data.get("name") or "").strip()
     if nid:

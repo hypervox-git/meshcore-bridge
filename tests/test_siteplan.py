@@ -1,6 +1,6 @@
 import pytest
-from bridge import linkmodel, siteplan, terrain, publicdir, publiclinks, repeater_cli as cli
-from tests.test_public import RECS, dirfile
+from bridge import linkmodel, siteplan, terrain, publiclinks, repeater_cli as cli
+from tests.test_public import dirfile
 
 
 def prof(elevs, d=20.0):

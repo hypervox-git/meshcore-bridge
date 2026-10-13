@@ -5,7 +5,6 @@
 import time
 import json
 import os
-import threading
 
 from config import MSG_LOG_FILE, NODE_DB_FILE, ALIAS_FILE, POS_HIST_FILE, MAX_LOG
 
@@ -15,13 +14,10 @@ iface_ref = [None]
 message_log = []
 node_db = {}
 aliases = {}
-local_node_id = [None]
 geo_cache = {}
 position_trails = {}
 pos_history = {}
 mqtt_state = {}
-port_lock = threading.Lock()
-reconnecting = [False]
 last_serial_error = [None]
 
 

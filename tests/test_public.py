@@ -1,6 +1,6 @@
 import json
 import pytest
-from bridge import linkmodel, publicdir, publiclinks, repeater_cli as cli, state
+from bridge import linkmodel, publicdir, publiclinks, repeater_cli as cli
 
 
 def test_fspl_known_value():
