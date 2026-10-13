@@ -111,6 +111,21 @@
       <div class="config-actions"><button class="btn btn-send" onclick="antSave()">Save antenna</button><button class="btn" onclick="aimAt('reset')">Reset to config.py</button><span class="send-status" id="ant-status"></span></div>
     </div>
 
+    <div class="config-section" id="steer-card">
+      <div class="config-title">Antenna steering (director)</div>
+      <div class="config-hint">What the <b>Steer</b> buttons do &mdash; here and in a repeater's map popup, which shows the boresight bearing from this repeater. This only <i>commands</i> a director; the real antenna position is not read back, so confirm it physically.</div>
+      <div class="config-row"><span class="config-label">Action</span><select id="st-action" class="config-num" onchange="steerToggle()" style="width:300px"></select></div>
+      <div id="st-mqtt">
+        <div class="config-row"><span class="config-label">MQTT topic<div class="config-hint">Published on the bridge's MQTT connection. No wildcards.</div></span><input id="st-topic" type="text" class="config-num" maxlength="200" style="width:300px"></div>
+        <div class="config-row"><span class="config-label">Payload<div class="config-hint">Placeholders: {azimuth} 123.4, {azimuth_int} 123, {target} repeater name. JSON works, e.g. {"azimuth": {azimuth}}</div></span><input id="st-payload" type="text" class="config-num" maxlength="300" style="width:300px"></div>
+        <div class="config-row"><span class="config-label">QoS</span><select id="st-qos" class="config-num" style="width:90px"><option value="0">0</option><option value="1">1 (wait for ack)</option></select></div>
+        <div class="config-row"><span class="config-label">Retain</span><input id="st-retain" type="checkbox"></div>
+        <div class="config-row"><span class="config-label">Also update modelled aim<div class="config-hint">Move the map beam to the commanded bearing when a command is sent</div></span><input id="st-also" type="checkbox" checked></div>
+      </div>
+      <div class="config-actions"><button class="btn btn-send" onclick="steerSave()">Save steering settings</button><button class="btn" onclick="steerAimField()">Steer to the Aim field now</button><span class="send-status" id="st-status"></span></div>
+      <div class="config-hint" id="st-info"></div>
+    </div>
+
     <div class="config-section" id="plan-card">
       <div class="config-title">Line of sight &amp; antenna orientation planner</div>
       <div class="config-hint">Which public repeaters Ironhorse can see over the terrain (4/3-earth, Fresnel, 90 m elevation data, assumed mast heights), and which azimuth for a directional antenna reaches the most. A planning aid &mdash; buildings and trees are not modelled.</div>

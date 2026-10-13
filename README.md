@@ -159,6 +159,26 @@ sector, corner reflector). Picking one fills in typical gain / front-to-back / b
 is applied until **Save antenna**. Pattern size is scaled by gain from a **0 dBi reference circle**: tick *show* to draw it on the map and edit its radius (metres, default 400; kept in the browser) - everything updates live. Reach = radius x 10^(dBi/20), so +6 dBi doubles it and a 12 dBi antenna reaches 4x as far. The saved antenna's beam uses the same scale. It is an illustrative scale, not a prediction. The antenna is always assumed vertically polarised, so the pattern shown is the azimuth (H-plane) one. The figures are typical, not measured - edit them to match your antenna. A blank
 beamwidth keeps the Moxon-style wide lobe derived from front-to-back.
 
+### Antenna steering (director)
+
+Click a repeater on the map: its popup shows the **boresight bearing from our repeater** (the azimuth that points the
+antenna straight at it, degrees true), how far off the current boresight that is, and the gain now vs. if aimed. A
+**Steer** button in the popup (and *Steer to the Aim field now* on the Test tab) runs the action chosen in the
+**Antenna steering (director)** card:
+
+- **Model only** - just updates the aim the bridge models (the map beam, path-loss maths and planner). No hardware.
+- **MQTT** - publishes the azimuth to an antenna director through the bridge's own MQTT connection. Topic (default
+  `<MQTT_TOPIC>/antenna/azimuth/set`), payload template, QoS (0, or 1 to wait for the broker's ack) and retain are set on the
+  card. Payload placeholders: `{azimuth}` (123.4), `{azimuth_int}` (123) and `{target}` (repeater name, JSON-escaped), so
+  plain `{azimuth}` and JSON such as `{"azimuth": {azimuth}}` both work. Wildcard and `$` topics are refused, and an MQTT
+  steer asks for confirmation first. *Also update modelled aim* moves the map beam only after the command has been sent
+  successfully.
+
+Settings are saved in the git-ignored `meshcore_steer.json` (`STEER_FILE`); `STEER_DEFAULTS` in `config.py` is an optional
+default. New drivers (HTTP rotator, serial, ...) are one function plus one entry in `bridge/steer.py`'s `ACTIONS`.
+This only *commands* a director - nothing reads the real antenna position back, and the web UI has no login, so keep
+it on the LAN.
+
 ### Line of sight and antenna orientation planner
 
 Test tab -> *Analyse* (or `POST /api/plan/run`, then `GET /api/plan`). For the nearest public repeaters

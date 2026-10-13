@@ -478,11 +478,13 @@ window.simKeys = new Set();
 function simColour(rssi){ return rssi >= -100 ? '#00e5a0' : rssi >= -115 ? '#ff9500' : '#ff3b3b'; }
 
 function simPopup(it, loc){
-  const m = it.measured || {};
+  const m = it.measured || {}, dir = !!(loc.antenna && loc.antenna.directional), idx = (window.simItems || []).indexOf(it);
   return '<b>' + escHtml(it.name || it.key.slice(0, 8)) + '</b> (' + (it.source === 'discovered' ? 'heard by us' : 'public directory') + ')<br>' + escHtml(it.key.slice(0, 8))
     + '<br>Distance ' + it.distance_km + ' km @ ' + it.freq_mhz + ' MHz'
     + '<br>Free-space loss ' + it.fspl_db + ' dB'
-    + (loc.antenna && loc.antenna.directional ? '<br>Bearing ' + it.bearing_deg + '&deg; (' + it.off_boresight_deg + '&deg; off ' + escHtml(String(loc.antenna.type)) + ' boresight ' + loc.antenna.azimuth_deg + '&deg;)' : '')
+    + '<br><b>Boresight to point at this repeater: ' + it.bearing_deg + '&deg; true</b> (from ' + escHtml(loc.name || 'our repeater') + ')'
+    + (dir ? '<br>' + it.off_boresight_deg + '&deg; off the current ' + escHtml(String(loc.antenna.type)) + ' boresight ' + loc.antenna.azimuth_deg + '&deg;; gain ' + it.gain_local_dbi + ' &rarr; ' + loc.antenna.gain_dbi + ' dBi if aimed' : '<br>Omni antenna - no steering needed')
+    + (dir && idx >= 0 ? '<br><button class="btn btn-send" onclick="steerIdx(' + idx + ')">' + steerLabel(it.bearing_deg) + '</button> <span class="send-status" id="steer-msg"></span>' : '')
     + '<br>Antenna gain: ' + it.gain_local_dbi + ' dBi here' + (loc.antenna && loc.antenna.directional ? ' (peak ' + loc.antenna.gain_dbi + ', F/B ' + loc.antenna.front_back_db + ' dB)' : '') + ' + ' + it.gain_remote_dbi + ' dBi there (' + escHtml(it.gain_src) + ')'
     + '<br><b>Simulated path loss ' + it.pathloss_db + ' dB</b> &rarr; ' + it.rssi_dbm + ' dBm at ' + it.tx_dbm + ' dBm TX'
     + (m.pathloss_db != null ? '<br>Measured path loss ~' + m.pathloss_db + ' dB (' + (it.excess_db >= 0 ? '+' : '') + it.excess_db + ' dB vs free space)' : '')
@@ -544,6 +546,7 @@ function drawSim(d){
   if (!document.getElementById('sim-toggle').checked){ info.textContent = ''; return; }
   if (d.note){ info.textContent = d.note; return; }
   simLayer = L.layerGroup().addTo(leafletMap);
+  window.simItems = d.items;                       // simPopup/steerIdx look repeaters up by index
   drawBeam(loc, d);
   d.items.forEach(it => {
     const disc = it.source === 'discovered';
@@ -566,7 +569,7 @@ function drawSim(d){
 }
 
 function loadSim(){
-  fetch('/api/public/links').then(r => r.json()).then(d => { if (d && !d.error) drawSim(d); else if (d) document.getElementById('sim-info').textContent = d.error; }).catch(() => {});
+  return fetch('/api/public/links').then(r => r.json()).then(d => { if (d && !d.error) drawSim(d); else if (d) document.getElementById('sim-info').textContent = d.error; }).catch(() => {});
 }
 
 (function(){
@@ -756,3 +759,60 @@ function refChange(){
   refGhost(); antGhost();
   if (window.lastSim) drawSim(window.lastSim);     // saved antenna beam uses the same scale
 }
+
+// ---- antenna steering (Test tab card + the repeater popup button) --------------------------
+window.steerCfg = null;
+function steerForm(){
+  const sel = document.getElementById('st-action');
+  if (!sel || !window.steerCfg) return null;                 // form not loaded yet: server uses what is saved
+  return {action: sel.value, topic: document.getElementById('st-topic').value, payload: document.getElementById('st-payload').value,
+          qos: parseInt(document.getElementById('st-qos').value, 10), retain: document.getElementById('st-retain').checked,
+          also_model: document.getElementById('st-also').checked};
+}
+function steerToggle(){
+  const sel = document.getElementById('st-action'), box = document.getElementById('st-mqtt');
+  if (box && sel) box.style.display = sel.value === 'mqtt' ? '' : 'none';
+}
+function steerLabel(az){
+  const sel = document.getElementById('st-action'), a = sel && sel.value ? sel.value : (window.steerCfg && window.steerCfg.settings.action) || 'model';
+  return a === 'mqtt' ? 'Steer antenna to ' + az + '&deg; (MQTT)' : 'Set modelled aim to ' + az + '&deg;';
+}
+function steerFill(d, keepForm){
+  window.steerCfg = d;
+  const sel = document.getElementById('st-action'); if (!sel) return;
+  if (!keepForm){
+    sel.innerHTML = d.actions.map(a => '<option value="' + escHtml(a.id) + '">' + escHtml(a.label) + '</option>').join('');
+    const s = d.settings, set = (id, v) => { document.getElementById(id).value = v; };
+    sel.value = s.action; set('st-topic', s.topic); set('st-payload', s.payload); set('st-qos', s.qos);
+    document.getElementById('st-retain').checked = !!s.retain; document.getElementById('st-also').checked = !!s.also_model;
+    steerToggle();
+  }
+  const l = d.last, t = ts => new Date(ts * 1000).toLocaleTimeString();
+  document.getElementById('st-info').textContent = 'MQTT broker: ' + (d.mqtt_connected ? 'connected' : 'NOT connected')
+    + (l ? ' - last command ' + t(l.ts) + ': ' + l.azimuth + '\u00b0 via ' + l.action + (l.ok ? ' OK' : ' FAILED (' + l.error + ')') : ' - no command sent since the bridge started');
+}
+function steerLoad(keepForm){ return fetch('/api/steer').then(r => r.json()).then(d => { if (d.ok) steerFill(d, keepForm); }).catch(() => {}); }
+function steerSave(){
+  const f = steerForm(); if (!f) return;
+  post('/api/steer/settings', f).then(d => { if (!d.ok){ setStatus('st-status', d.error, 'err'); return; }
+    setStatus('st-status', 'Saved', 'ok'); steerFill(d, true); }).catch(e => setStatus('st-status', 'Error: ' + e, 'err'));
+}
+function steerSend(az, target){
+  const f = steerForm(), act = f ? f.action : 'model';
+  if (!f) return steerLoad(false).then(() => window.steerCfg ? steerSend(az, target) : setStatus('st-status', 'Steering settings could not be loaded - nothing sent', 'err'));
+  if (act === 'mqtt' && !confirm('Send a steering command to the antenna director?\n\nAzimuth ' + az + '\u00b0 true' + (target ? ' (towards ' + target + ')' : '') + '\nMQTT topic: ' + f.topic + '\nPayload: ' + f.payload)) return;
+  const show = (m, ok) => { setStatus('st-status', m, ok ? 'ok' : 'err'); const e = document.getElementById('steer-msg'); if (e) e.textContent = m; };
+  return post('/api/steer', {azimuth: az, target: target || null, settings: f}).then(d => {
+    if (!d.ok){ show(d.error, false); steerLoad(true); return; }
+    show(d.detail, true); if (d.antenna) antFill(d.antenna); steerLoad(true);
+    return Promise.resolve(typeof loadSim === 'function' ? loadSim() : null).then(() => {
+      const i = document.getElementById('sim-info'); if (i) i.textContent = '\u2713 ' + d.detail + ' - ' + i.textContent; });
+  }).catch(e => show('Error: ' + e, false));
+}
+function steerIdx(i){ const it = (window.simItems || [])[i]; if (it) steerSend(it.bearing_deg, it.name || it.key.slice(0, 8)); }
+function steerAimField(){
+  const v = document.getElementById('ant-az').value;
+  if (v === '' || isNaN(parseFloat(v))){ setStatus('st-status', 'Enter the aim bearing in the Antenna card first', 'err'); return; }
+  steerSend(((parseFloat(v) % 360) + 360) % 360, null);
+}
+steerLoad(false);

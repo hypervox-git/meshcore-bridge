@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer
 
 
 @app.route("/")
@@ -192,6 +192,31 @@ def api_antenna_aim():
             antenna.save({"azimuth_deg": az}, why)
         return dict(extra, ok=True, azimuth_deg=az, applied=bool(d.get("apply", True)),
                     antenna=publiclinks.local_info()["antenna"])
+    return _guard(go)
+
+
+@app.route("/api/steer")
+def api_steer_status():
+    return _guard(steer.status)
+
+
+@app.route("/api/steer/settings", methods=["POST"])
+def api_steer_settings():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: dict(steer.status(), settings=steer.save_settings(d)))
+
+
+@app.route("/api/steer", methods=["POST"])
+def api_steer():
+    """Point the antenna: {azimuth, target?, action?, settings?}. `settings` (what the form currently shows)
+    is saved first so the command always uses exactly what is on screen."""
+    d = request.get_json(silent=True) or {}
+
+    def go():
+        if isinstance(d.get("settings"), dict):
+            steer.save_settings(d["settings"])
+        res = steer.steer(d.get("azimuth"), d.get("target"), d.get("action"), "steered from the web UI")
+        return dict(res, ok=True, antenna=publiclinks.local_info()["antenna"], last=steer.status()["last"])
     return _guard(go)
 
 
