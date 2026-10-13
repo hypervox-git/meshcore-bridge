@@ -919,3 +919,61 @@ mountLoad(false);
   };
   setTimeout(tick, 3000);
 })();
+
+// ---- MQTT monitor page ----
+let mqMsgs = [], mqState = null;
+const MQ_MAX = 300;
+function mqRender(){
+  const el = document.getElementById('mq-list'); if (!el) return;
+  const q = (document.getElementById('mq-find').value || '').toLowerCase();
+  const rows = mqMsgs.filter(m => !q || m.topic.toLowerCase().includes(q) || m.payload.toLowerCase().includes(q)).slice().reverse();
+  document.getElementById('mq-count').textContent = rows.length + (q ? ' of ' + mqMsgs.length : '') + ' messages';
+  if (!rows.length){
+    el.innerHTML = '<div class="empty-state">' + (mqState && mqState.subscribed ? 'Subscribed to ' + escHtml(mqState.active_filter || mqState.filter) + ' - waiting for messages...' : 'Press Subscribe to watch the bridge\'s MQTT topics.') + '</div>';
+    return;
+  }
+  el.innerHTML = rows.map(m => {
+    let body = m.payload;
+    try { body = JSON.stringify(JSON.parse(m.payload), null, 1); } catch (e) {}
+    return '<div class="log-entry"><div class="log-row1"><span style="color:var(--text-muted)">' + new Date(m.ts * 1000).toLocaleTimeString() + '</span>'
+      + '<span class="nb-id">' + escHtml(m.topic) + '</span>'
+      + (m.retain ? '<span class="badge">retained</span>' : '') + '<span class="badge">qos ' + m.qos + '</span><span class="badge">' + m.size + ' B' + (m.truncated ? ', cut' : '') + '</span></div>'
+      + '<pre style="margin:2px 0 0;white-space:pre-wrap;word-break:break-all;font-size:10px;color:var(--text)">' + escHtml(body) + '</pre></div>';
+  }).join('');
+}
+function mqFillState(d){
+  mqState = d;
+  const f = document.getElementById('mq-filter'); if (!f) return;
+  if (document.activeElement !== f && !f.dataset.touched) f.value = d.filter;
+  if (d.suggestions) document.getElementById('mq-suggest').innerHTML = d.suggestions.map(s => '<option value="' + escHtml(s.filter) + '">' + escHtml(s.label) + '</option>').join('');
+  const b = document.getElementById('mq-state');
+  b.textContent = !d.broker_connected ? 'broker not connected' : d.subscribed ? 'subscribed: ' + (d.active_filter || d.filter) : 'not subscribed';
+  b.className = 'badge' + (d.subscribed && d.broker_connected ? ' on' : '');
+  document.getElementById('mq-sub').disabled = !!(d.subscribed && (d.active_filter === f.value.trim()));
+  document.getElementById('mq-unsub').disabled = !d.subscribed;
+}
+function mqLoad(){
+  return fetch('/api/mqtt/monitor').then(r => r.json()).then(d => {
+    if (!d.ok) return; mqMsgs = d.messages || []; mqFillState(d); mqRender(); }).catch(() => {});
+}
+function mqCall(url, body, msg){
+  return post(url, body || {}).then(d => {
+    if (!d.ok){ setStatus('mq-status', d.error, 'err'); return; }
+    setStatus('mq-status', msg, 'ok'); mqFillState(d); if (d.messages) { mqMsgs = d.messages; } mqRender();
+  }).catch(e => setStatus('mq-status', 'Error: ' + e, 'err'));
+}
+function mqSubscribe(){ const f = document.getElementById('mq-filter'); f.dataset.touched = '1'; return mqCall('/api/mqtt/subscribe', {filter: f.value.trim()}, 'Subscribed'); }
+function mqUnsubscribe(){ return mqCall('/api/mqtt/unsubscribe', {}, 'Unsubscribed'); }
+function mqClear(){ return mqCall('/api/mqtt/clear', {}, 'Cleared'); }
+socket.on('mqtt_msg', m => {
+  mqMsgs.push(m); if (mqMsgs.length > MQ_MAX) mqMsgs.shift();
+  if (document.getElementById('page-mqtt').classList.contains('active')) mqRender();
+});
+socket.on('mqtt_monitor', d => { d.suggestions = d.suggestions || (mqState && mqState.suggestions); mqFillState(d); });
+(function mqHook(){
+  const orig = showPage;
+  showPage = function(name){ orig(name); if (name === 'mqtt') mqLoad(); };
+})();
+document.getElementById('mq-filter').addEventListener('input', e => { e.target.dataset.touched = '1';
+  if (mqState) document.getElementById('mq-sub').disabled = !!(mqState.subscribed && mqState.active_filter === e.target.value.trim()); });
+mqLoad();

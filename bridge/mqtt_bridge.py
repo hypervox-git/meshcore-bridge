@@ -23,10 +23,20 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
         mqttc.subscribe(f"{MQTT_TOPIC}/send")
         for nid, ndata in node_db.items():
             publish_ha_discovery(nid, ndata.get('name'))
+        try:                                   # MQTT monitor page: restore its subscription
+            from bridge import mqtt_monitor
+            mqtt_monitor.on_connect()
+        except Exception as e:
+            print(f"MQTT monitor: {e}")
 
 
 def on_mqtt_disconnect(client, userdata, disconnect_flags, reason_code, properties):
     state.mqtt_connected = False
+    try:
+        from bridge import mqtt_monitor
+        mqtt_monitor._emit_state()
+    except Exception:
+        pass
     socketio.emit('status', {'serial': state.serial_connected, 'mqtt': state.mqtt_connected}, namespace='/')
 
 

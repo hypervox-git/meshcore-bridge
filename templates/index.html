@@ -35,6 +35,7 @@
   <div class="nav-tab" data-page="map" onclick="showPage('map')">Map</div>
   <div class="nav-tab" data-page="neighbors" onclick="showPage('neighbors')">Neighbours</div>
   <div class="nav-tab" data-page="test" onclick="showPage('test')">Test</div>
+  <div class="nav-tab" data-page="mqtt" onclick="showPage('mqtt')">MQTT</div>
   <div class="nav-tab" data-page="log" onclick="showPage('log')">Log <span class="badge" id="log-count" style="margin-left:4px">0</span></div>
   <div class="nav-tab" data-page="apidocs" onclick="showPage('apidocs')">API</div>
 </nav>
@@ -236,6 +237,21 @@
     <div class="empty-state">Listening on {{ serial_port }}...</div>
   </div>
   <div class="scroll-area" id="mqtt-container" style="display:none"></div>
+</div>
+
+<!-- MQTT monitor -->
+<div class="page" id="page-mqtt">
+  <div class="log-toolbar" style="flex-wrap:wrap">
+    <input id="mq-filter" list="mq-suggest" type="text" class="config-num" maxlength="200" style="width:260px" placeholder="meshcore/#">
+    <datalist id="mq-suggest"></datalist>
+    <button class="btn btn-send" id="mq-sub" onclick="mqSubscribe()" style="font-size:10px;padding:4px 10px">Subscribe</button>
+    <button class="btn" id="mq-unsub" onclick="mqUnsubscribe()" style="font-size:10px;padding:4px 10px">Unsubscribe</button>
+    <button class="btn" onclick="mqClear()" style="font-size:10px;padding:4px 10px">Clear</button>
+    <input id="mq-find" type="text" class="config-num" placeholder="find in messages" oninput="mqRender()" style="width:150px">
+    <span class="badge" id="mq-state">...</span><span class="badge" id="mq-count">0 messages</span>
+    <span class="send-status" id="mq-status"></span>
+  </div>
+  <div class="scroll-area" id="mq-list"><div class="empty-state">Press Subscribe to watch the bridge's MQTT topics.</div></div>
 </div>
 
 <!-- API docs -->

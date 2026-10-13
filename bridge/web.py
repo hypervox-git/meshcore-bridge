@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer, nbtable, skywatcher
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer, nbtable, skywatcher, mqtt_monitor
 
 
 @app.route("/")
@@ -204,6 +204,27 @@ def api_nbtable():
 def api_nbtable_sync():
     """Update the table from the public database now (same job the 24 h background task runs)."""
     return _guard(lambda: dict(nbtable.sync(manual=True), table=nbtable.view()))
+
+
+@app.route("/api/mqtt/monitor")
+def api_mqtt_monitor():
+    return _guard(mqtt_monitor.status)
+
+
+@app.route("/api/mqtt/subscribe", methods=["POST"])
+def api_mqtt_subscribe():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: mqtt_monitor.subscribe(d.get("filter")))
+
+
+@app.route("/api/mqtt/unsubscribe", methods=["POST"])
+def api_mqtt_unsubscribe():
+    return _guard(mqtt_monitor.unsubscribe)
+
+
+@app.route("/api/mqtt/clear", methods=["POST"])
+def api_mqtt_clear():
+    return _guard(mqtt_monitor.clear)
 
 
 @app.route("/api/mount")

@@ -184,6 +184,14 @@ Test tab -> **Sky-Watcher mount**. Choose **Sky-Watcher** as the action in *Ante
 
 Only the azimuth axis is used; keep the altitude axis level. The bridge reads the real position back, so the card shows where the antenna actually points. Protocol: Sky-Watcher motor-controller commands over UDP (`bridge/skywatcher.py`). It has been tested against an emulator only, so try small nudges first; if it overshoots, raise *Brake distance*.
 
+### MQTT monitor page
+
+The **MQTT** tab shows the raw MQTT messages that matter to the bridge, live, using the bridge's own broker connection (so the bridge's own publishes show too: packets, telemetry, per-node values, the antenna-steering command, anything sent to `<MQTT_TOPIC>/send`).
+
+- **Subscribe / Unsubscribe** start and stop the watching. The default is *not subscribed*; the filter and state are remembered across restarts (`meshcore_mqtt_monitor.json`) and restored when the broker reconnects.
+- The filter box offers suggestions (everything, text, positions, per-node values, inject topic, and your steering topic). MQTT wildcards (`+`, `#`) work, but only topics under `MQTT_TOPIC` (or the saved steering topic) are allowed - it is not a general broker sniffer.
+- Newest messages first, JSON pretty-printed, payloads cut at 1000 characters, the last 300 kept (`MQTT_MONITOR_MAX`). *Clear* empties the list; *find* filters it.
+
 ### Antenna steering (director)
 
 Click a repeater on the map: its popup shows the **boresight bearing from our repeater** (the azimuth that points the
