@@ -117,7 +117,7 @@ def test_routes(env):
     from bridge.extensions import app
     c = app.test_client()
     d = c.get('/api/steer').get_json()
-    assert d['ok'] and {a['id'] for a in d['actions']} == {'model', 'mqtt'} and d['mqtt_connected'] is True
+    assert d['ok'] and {a['id'] for a in d['actions']} == {'model', 'mqtt', 'skywatcher'} and d['mqtt_connected'] is True
     r = c.post('/api/steer/settings', json={'action': 'mqtt', 'topic': 'bad/#'}).get_json()
     assert r['ok'] is False and 'wildcard' in r['error']
     # the form's settings travel with the command and are what get used

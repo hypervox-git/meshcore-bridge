@@ -153,9 +153,21 @@ def _do_mqtt(az, target, s, reason):
             'topic': topic, 'payload': payload}
 
 
+def _do_skywatcher(az, target, s, reason):
+    from bridge import skywatcher
+    try:
+        res = skywatcher.goto(az)
+    except skywatcher.MountError as e:
+        raise RuntimeError(str(e))
+    if s.get('also_model'):
+        antenna.save({'azimuth_deg': az}, reason or 'steered via the Sky-Watcher mount')
+    return {'detail': res['detail']}
+
+
 ACTIONS = {
     'model': ('Model only - update the aim shown in this UI (no hardware)', _do_model),
     'mqtt': ('MQTT - publish the azimuth to an antenna director', _do_mqtt),
+    'skywatcher': ('Sky-Watcher AZ-GTI mount (WiFi) - slew the antenna', _do_skywatcher),
 }
 
 

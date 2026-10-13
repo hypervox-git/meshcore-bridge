@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer, nbtable
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer, nbtable, skywatcher
 
 
 @app.route("/")
@@ -204,6 +204,48 @@ def api_nbtable():
 def api_nbtable_sync():
     """Update the table from the public database now (same job the 24 h background task runs)."""
     return _guard(lambda: dict(nbtable.sync(manual=True), table=nbtable.view()))
+
+
+@app.route("/api/mount")
+def api_mount():
+    return _guard(skywatcher.status)
+
+
+@app.route("/api/mount/settings", methods=["POST"])
+def api_mount_settings():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: skywatcher.status(skywatcher.save_settings(d)))
+
+
+def _mount_call(fn):
+    try:
+        res = fn()
+    except skywatcher.MountError as e:
+        return {"ok": False, "error": str(e)}
+    return dict(skywatcher.status(), detail=res.get("detail"))
+
+
+@app.route("/api/mount/calibrate", methods=["POST"])
+def api_mount_calibrate():
+    """Declare the bearing the antenna points at now: {bearing?, settings?} (form values are saved first)."""
+    d = request.get_json(silent=True) or {}
+
+    def go():
+        if isinstance(d.get("settings"), dict):
+            skywatcher.save_settings(d["settings"])
+        return skywatcher.calibrate(d.get("bearing"))
+    return _guard(lambda: _mount_call(go))
+
+
+@app.route("/api/mount/nudge", methods=["POST"])
+def api_mount_nudge():
+    d = request.get_json(silent=True) or {}
+    return _guard(lambda: _mount_call(lambda: skywatcher.nudge(d.get("delta"))))
+
+
+@app.route("/api/mount/stop", methods=["POST"])
+def api_mount_stop():
+    return _guard(lambda: _mount_call(skywatcher.stop))
 
 
 @app.route("/api/steer")

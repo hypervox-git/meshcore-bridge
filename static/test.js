@@ -805,7 +805,7 @@ function steerToggle(){
 }
 function steerLabel(az){
   const sel = document.getElementById('st-action'), a = sel && sel.value ? sel.value : (window.steerCfg && window.steerCfg.settings.action) || 'model';
-  return a === 'mqtt' ? 'Steer antenna to ' + az + '&deg; (MQTT)' : 'Set modelled aim to ' + az + '&deg;';
+  return a === 'mqtt' ? 'Steer antenna to ' + az + '&deg; (MQTT)' : a === 'skywatcher' ? 'Turn antenna to ' + az + '&deg; (mount)' : 'Set modelled aim to ' + az + '&deg;';
 }
 function steerFill(d, keepForm){
   window.steerCfg = d;
@@ -830,6 +830,7 @@ function steerSave(){
 function steerSend(az, target){
   const f = steerForm(), act = f ? f.action : 'model';
   if (!f) return steerLoad(false).then(() => window.steerCfg ? steerSend(az, target) : setStatus('st-status', 'Steering settings could not be loaded - nothing sent', 'err'));
+  if (act === 'skywatcher' && !confirm('Turn the antenna with the Sky-Watcher mount?\n\nAzimuth ' + az + '\u00b0 true' + (target ? ' (towards ' + target + ')' : '') + '\nCheck nothing can snag the coax or mast.')) return;
   if (act === 'mqtt' && !confirm('Send a steering command to the antenna director?\n\nAzimuth ' + az + '\u00b0 true' + (target ? ' (towards ' + target + ')' : '') + '\nMQTT topic: ' + f.topic + '\nPayload: ' + f.payload)) return;
   const show = (m, ok) => { setStatus('st-status', m, ok ? 'ok' : 'err'); const e = document.getElementById('steer-msg'); if (e) e.textContent = m; };
   return post('/api/steer', {azimuth: az, target: target || null, settings: f}).then(d => {
@@ -846,3 +847,43 @@ function steerAimField(){
   steerSend(((parseFloat(v) % 360) + 360) % 360, null);
 }
 steerLoad(false);
+
+// ---- Sky-Watcher mount ----
+function mountForm(){
+  const v = id => document.getElementById(id);
+  return {host: v('mt-host').value.trim(), port: parseInt(v('mt-port').value, 10), ref_bearing: parseFloat(v('mt-bearing').value),
+          travel_deg: parseFloat(v('mt-travel').value), brake_deg: parseFloat(v('mt-brake').value), invert: v('mt-invert').checked};
+}
+function mountFill(d, keepForm){
+  const v = id => document.getElementById(id); if (!v('mt-host')) return;
+  const s = d.settings;
+  if (!keepForm){
+    v('mt-host').value = s.host; v('mt-port').value = s.port; v('mt-bearing').value = s.ref_bearing;
+    v('mt-travel').value = s.travel_deg; v('mt-brake').value = s.brake_deg; v('mt-invert').checked = !!s.invert;
+  }
+  let t;
+  if (!s.host) t = 'Enter the mount IP address and press Save.';
+  else if (!d.reachable) t = 'Mount not reachable' + (d.message ? ': ' + d.message : '') + '.';
+  else t = 'Mount reachable' + (d.moving ? ' (moving)' : '') + '. ' + (d.calibrated
+    ? 'Pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.'
+    : 'Not calibrated yet: point the antenna at the bearing above and press Set current pointing.');
+  v('mt-info').textContent = t;
+}
+function mountLoad(keepForm){ return fetch('/api/mount').then(r => r.json()).then(d => { if (d.ok) mountFill(d, keepForm); }).catch(() => {}); }
+function mountCall(url, body, okMsg){
+  setStatus('mt-status', 'Working...', 'ok');
+  return post(url, body).then(d => {
+    if (!d.ok) { setStatus('mt-status', d.error, 'err'); return; }
+    setStatus('mt-status', d.detail || okMsg || 'Done', 'ok'); mountFill(d, true);
+  }).catch(e => setStatus('mt-status', 'Error: ' + e, 'err'));
+}
+function mountSave(){ return mountCall('/api/mount/settings', mountForm(), 'Saved'); }
+function mountCalibrate(){
+  const f = mountForm();
+  if (isNaN(f.ref_bearing)) { setStatus('mt-status', 'Enter the bearing the antenna points at', 'err'); return; }
+  if (!confirm('Record that the antenna points at ' + f.ref_bearing + '\u00b0 true right now?\n\nIf this is wrong every later bearing will be wrong.')) return;
+  return mountCall('/api/mount/calibrate', {settings: f});
+}
+function mountNudge(d){ return mountCall('/api/mount/nudge', {delta: d}); }
+function mountStop(){ return mountCall('/api/mount/stop', {}); }
+mountLoad(false);

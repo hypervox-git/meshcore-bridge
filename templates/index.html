@@ -127,6 +127,23 @@
       <div class="config-hint" id="st-info"></div>
     </div>
 
+    <div class="config-section" id="mount-card">
+      <div class="config-title">Sky-Watcher mount (AZ-GTI)</div>
+      <div class="config-hint">Rotates the antenna when the steering action above is <b>Sky-Watcher</b>. Join the mount to your home WiFi in the SynScan app first. Only the azimuth axis is used. The mount forgets its position when powered off, so after every power-up point the antenna at a known bearing and press <b>Set current pointing</b>.</div>
+      <div class="config-row"><span class="config-label">Mount IP address<div class="config-hint">Its own hotspot is 192.168.4.1</div></span><input id="mt-host" type="text" class="config-num" maxlength="253" placeholder="192.168.1.60" style="width:160px"></div>
+      <div class="config-row"><span class="config-label">UDP port</span><input id="mt-port" type="number" class="config-num" min="1" max="65535" style="width:90px"></div>
+      <div class="config-row"><span class="config-label">Initial pointing bearing &deg;<div class="config-hint">True bearing the antenna points at right now (your Moxon: about 110)</div></span><input id="mt-bearing" type="number" class="config-num" min="0" max="360" step="0.1" style="width:90px"></div>
+      <div class="config-row"><span class="config-label">Travel limit &plusmn;&deg;<div class="config-hint">Max turn either side of that bearing, so the coax cannot wind round the mast (180 = one full turn in total)</div></span><input id="mt-travel" type="number" class="config-num" min="30" max="360" style="width:90px"></div>
+      <div class="config-row"><span class="config-label">Brake distance &deg;<div class="config-hint">Slow-down before the target; raise it if the antenna overshoots</div></span><input id="mt-brake" type="number" class="config-num" min="0.5" max="30" step="0.5" style="width:90px"></div>
+      <div class="config-row"><span class="config-label">Reverse direction<div class="config-hint">Tick if +10&deg; turns the antenna anticlockwise (seen from above)</div></span><input id="mt-invert" type="checkbox"></div>
+      <div class="config-actions"><button class="btn btn-send" onclick="mountSave()">Save</button>
+        <button class="btn btn-share" onclick="mountCalibrate()">Set current pointing</button>
+        <button class="btn" onclick="mountNudge(-10)">&minus;10&deg;</button><button class="btn" onclick="mountNudge(10)">+10&deg;</button>
+        <button class="btn" onclick="mountStop()">Stop</button><button class="btn" onclick="mountLoad(true)">Refresh</button>
+        <span class="send-status" id="mt-status"></span></div>
+      <div class="config-hint" id="mt-info"></div>
+    </div>
+
     <div class="config-section" id="plan-card">
       <div class="config-title">Line of sight &amp; antenna orientation planner</div>
       <div class="config-hint">Which public repeaters Ironhorse can see over the terrain (4/3-earth, Fresnel, 90 m elevation data, assumed mast heights), and which azimuth for a directional antenna reaches the most. A planning aid &mdash; buildings and trees are not modelled.</div>

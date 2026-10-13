@@ -170,6 +170,18 @@ The table lists repeaters within `NEIGHBOUR_RADIUS_KM` of yours and is saved to 
 - **Range and bearing** (from your repeater) are recalculated on every table update, and if your position changes.
 - Needs your position: `GATEWAY_LAT`/`GATEWAY_LON`, or `LOCAL_NAME` set to the repeater's name in the public list.
 
+### Sky-Watcher AZ-GTI mount (antenna rotator)
+
+Test tab -> **Sky-Watcher mount**. Choose **Sky-Watcher** as the action in *Antenna steering* and every Steer button (including the repeater popup on the map) turns the antenna.
+
+1. In the SynScan app, set the mount to join your home WiFi, and give it a fixed IP / DHCP reservation (its own hotspot is 192.168.4.1).
+2. Enter the IP (UDP port 11880) and **Save**. The card shows whether the mount is reachable.
+3. Point the antenna at a bearing you know (the Moxon: about 110), enter it as *Initial pointing bearing* and press **Set current pointing**. Do this after every power-up: the mount forgets its position when switched off.
+4. Press **+10 / -10**. If the antenna turns the wrong way, tick **Reverse direction**.
+5. Travel limit (default +/-180 from the initial bearing) keeps the coax from winding round the mast: a target is always reached the way that stays inside the limit, and a move outside it is refused. **Stop** halts the mount.
+
+Only the azimuth axis is used; keep the altitude axis level. The bridge reads the real position back, so the card shows where the antenna actually points. Protocol: Sky-Watcher motor-controller commands over UDP (`bridge/skywatcher.py`). It has been tested against an emulator only, so try small nudges first; if it overshoots, raise *Brake distance*.
+
 ### Antenna steering (director)
 
 Click a repeater on the map: its popup shows the **boresight bearing from our repeater** (the azimuth that points the

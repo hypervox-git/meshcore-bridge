@@ -89,3 +89,7 @@ NEIGHBOUR_RADIUS_KM     = 50      # repeaters within this range of ours are list
 NEIGHBOUR_TABLE_MAX     = 60      # nearest N
 NEIGHBOUR_SYNC_HOURS    = 24      # background update from the public database
 NEIGHBOUR_ACTIVE_HOURS  = 24      # a row stays green this long after it was last heard / discovered
+
+# Sky-Watcher AZ-GTI antenna rotator (Test tab -> "Sky-Watcher mount"); settings saved from the web UI
+MOUNT_FILE              = "meshcore_mount.json"   # git-ignored
+MOUNT_DEFAULTS          = {}      # e.g. {"host": "192.168.1.60", "travel_deg": 180}
