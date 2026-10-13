@@ -509,10 +509,10 @@ function patField(t, fb, hpbw){
   return Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
 }
 
-// Pattern SIZE is relative to gain, from a 0 dBi reference: a 0 dBi antenna covers a circle ANT_REF_DIAMETER_KM
-// across, and free-space range scales as 10^(dBi/20) (+6 dBi = double the reach). Illustrative scale only.
-const ANT_REF_DIAMETER_KM = 0.8;
-function antReachKm(gainDbi){ return ANT_REF_DIAMETER_KM / 2 * Math.pow(10, gainDbi / 20); }
+// Pattern SIZE is relative to gain, from an editable 0 dBi reference circle (Test tab, radius in metres):
+// free-space range scales as 10^(dBi/20), so +6 dBi = double the reach. Illustrative scale only.
+let ANT_REF_RADIUS_M = 400, refLayer = null;
+function antReachKm(gainDbi){ return ANT_REF_RADIUS_M / 1000 * Math.pow(10, gainDbi / 20); }
 function fmtReach(km){ return km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km'; }
 
 function drawBeam(loc, d){
@@ -529,6 +529,7 @@ function drawBeam(loc, d){
 }
 
 function drawSim(d){
+  window.lastSim = d;                              // so a reference-radius change can redraw without a fetch
   if (!leafletMap || typeof L === 'undefined') return;
   if (simLayer){ simLayer.remove(); simLayer = null; }
   window.simKeys = new Set();
@@ -539,7 +540,7 @@ function drawSim(d){
     if (gatewayMarker){ gatewayMarker.setLatLng([loc.lat, loc.lon]);
       if (!window.repGwPopup) gatewayMarker.setPopupContent('<b>' + escHtml(loc.name || 'Local repeater') + '</b><br>position from ' + escHtml(loc.source) + '<br>antenna gain ' + loc.gain_dbi + ' dBi (' + escHtml(loc.gain_src) + ')'); }
   }
-  setTimeout(antGhost, 0);                         // keep/redraw the preset ghost once the map is ready
+  setTimeout(() => { refGhost(); antGhost(); }, 0); // keep/redraw the reference + preset ghosts once the map is ready
   if (!document.getElementById('sim-toggle').checked){ info.textContent = ''; return; }
   if (d.note){ info.textContent = d.note; return; }
   simLayer = L.layerGroup().addTo(leafletMap);
@@ -727,4 +728,31 @@ function antPreset(){
   if (!omni && document.getElementById('ant-az').value === '') set('ant-az', 0);
   antGhost();
   setStatus('ant-status', 'Preview only - ghost shown on the Map tab. Save to apply.', 'ok');
+}
+
+// ---- 0 dBi reference circle (scale for all antenna ghosts) -----------------------------------
+(function refInit(){
+  try {
+    const v = parseFloat(localStorage.getItem('antRefRadiusM'));
+    if (v >= 10 && v <= 50000) ANT_REF_RADIUS_M = v;
+    const sh = document.getElementById('ref-show'); if (sh) sh.checked = localStorage.getItem('antRefShow') === '1';
+  } catch (e) {}
+  const r = document.getElementById('ref-radius'); if (r) r.value = ANT_REF_RADIUS_M;
+})();
+
+function refGhost(){
+  if (refLayer){ refLayer.remove(); refLayer = null; }
+  const sh = document.getElementById('ref-show');
+  if (!sh || !sh.checked || !leafletMap || typeof L === 'undefined' || (!GATEWAY_LAT && !GATEWAY_LON)) return;
+  refLayer = L.circle([GATEWAY_LAT, GATEWAY_LON], {radius: ANT_REF_RADIUS_M, color: '#8a94a6', weight: 1.5, dashArray: '2 6', fillColor: '#8a94a6', fillOpacity: .06, interactive: false})
+    .addTo(leafletMap).bindTooltip('0 dBi reference: ' + fmtReach(ANT_REF_RADIUS_M / 1000) + ' radius', {permanent: true, direction: 'right', className: 'link-label'});
+}
+
+function refChange(){
+  const inp = document.getElementById('ref-radius'), v = parseFloat(inp.value);
+  if (!(v >= 10 && v <= 50000)){ setStatus('ant-status', 'Reference radius must be 10-50000 m', 'err'); return; }
+  ANT_REF_RADIUS_M = v;
+  try { localStorage.setItem('antRefRadiusM', String(v)); localStorage.setItem('antRefShow', document.getElementById('ref-show').checked ? '1' : '0'); } catch (e) {}
+  refGhost(); antGhost();
+  if (window.lastSim) drawSim(window.lastSim);     // saved antenna beam uses the same scale
 }

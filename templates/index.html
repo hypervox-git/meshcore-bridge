@@ -100,6 +100,9 @@
       <div class="config-row"><span class="config-label">Directional<div class="config-hint">Untick for an omni antenna</div></span><input id="ant-dir" type="checkbox" checked onchange="antGhost()"></div>
       <div class="config-row"><span class="config-label">Common 868 MHz antennas<div class="config-hint">Fills the fields below with typical values and shows a ghost of its pattern on the Map tab, at the aim bearing. Nothing changes until you press Save.</div></span>
         <select id="ant-preset" class="config-num" onchange="antPreset()"></select></div>
+      <div class="config-row"><span class="config-label">0 dBi reference circle<div class="config-hint">The scale for every antenna ghost and the saved beam: reach = this radius &times; 10^(dBi/20), so +6 dBi doubles it. Updates live.</div></span>
+        <span><label><input id="ref-show" type="checkbox" onchange="refChange()"> show</label>&nbsp;
+        <input id="ref-radius" type="number" min="10" max="50000" step="10" value="400" class="config-num" oninput="refChange()" style="width:90px"> m radius</span></div>
       <div class="config-row"><span class="config-label">Type</span><input id="ant-type" type="text" class="config-num" maxlength="24" placeholder="Moxon"></div>
       <div class="config-row"><span class="config-label">Aim / boresight (&deg; true)<div class="config-hint">Compass bearing the antenna points at, 0&ndash;360 clockwise from true north</div></span><input id="ant-az" oninput="antGhost()" type="number" min="0" max="360" step="1" class="config-num"></div>
       <div class="config-row"><span class="config-label">Gain (dBi)</span><input id="ant-gain" oninput="antGhost()" type="number" min="-10" max="30" step="0.1" class="config-num"></div>
