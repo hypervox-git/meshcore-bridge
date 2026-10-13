@@ -159,8 +159,8 @@ def _do_skywatcher(az, target, s, reason):
         res = skywatcher.goto(az)
     except skywatcher.MountError as e:
         raise RuntimeError(str(e))
-    if s.get('also_model'):
-        antenna.save({'azimuth_deg': az}, reason or 'steered via the Sky-Watcher mount')
+    # The modelled aim is NOT set to the target here: it follows the mount's real bearing while it turns
+    # (skywatcher.sync_model), so the map beam / ghosts track the antenna instead of jumping to the target first.
     return {'detail': res['detail']}
 
 

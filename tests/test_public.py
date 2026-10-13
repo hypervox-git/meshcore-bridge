@@ -208,3 +208,21 @@ def test_pattern_symmetric_about_boresight():
         for off in (10, 45, 90, 135, 170):
             assert g(off, 10, 20, hp) == pytest.approx(g(360 - off, 10, 20, hp), abs=1e-9)
             assert g(off, 10, 20, hp) == pytest.approx(g(-off, 10, 20, hp), abs=1e-9)
+
+
+def test_every_repeater_within_20km_is_listed(tmp_path, monkeypatch):
+    import math
+    near = [{'public_key': '%08x' % (0x10000000 + i) + '00' * 28, 'adv_name': f'Near {i}', 'adv_lat': 51.30 + 0.01 * i,
+             'adv_lon': -2.90, 'type': 2} for i in range(1, 16)]                    # 15 repeaters, 1.1 to 16.7 km north
+    far = [{'public_key': 'ffee%04x' % i + '00' * 28, 'adv_name': f'Far {i}', 'adv_lat': 51.30 + 0.25 + 0.01 * i,
+            'adv_lon': -2.90, 'type': 2} for i in range(1, 8)]                       # 28 km and beyond
+    dirfile(tmp_path, monkeypatch, [RECS[0]] + near + far)
+    monkeypatch.setattr(publiclinks, '_c', lambda n, d: {'LOCAL_NAME': 'Ironhorse', 'PUBLIC_MAX_NEARBY': 5,
+                                                         'PUBLIC_RADIUS_KM': 40}.get(n, d))
+    monkeypatch.setattr(publiclinks, 'cli_ref', lambda: cli)
+    cli.latest['neighbours'] = []
+    out = publiclinks.links()
+    names = [i['name'] for i in out['items']]
+    assert all(f'Near {i}' in names for i in range(1, 16)) and out['always_km'] == 20      # all 15 despite MAX_NEARBY=5
+    assert not any(n.startswith('Far') for n in names)                                    # extras honour the cap (here: none left)
+    assert max(i['distance_km'] for i in out['items'] if i['name'].startswith('Near')) < 20

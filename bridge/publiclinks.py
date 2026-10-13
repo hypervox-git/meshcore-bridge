@@ -101,8 +101,12 @@ def links():
         out['items'].append(_item('discovered', (rec or {}).get('key') or r.get('key') or rid,
                                   (rec or {}).get('name') or r.get('name') or rid, lat, lon, gain, gsrc, loc, tx, f, m))
         seen.add((rec or {}).get('key') or rid)
-    for d, rec in publicdir.nearby(loc['lat'], loc['lon'], out['radius_km'], 'repeater',
-                                   int(_c('PUBLIC_MAX_NEARBY', 12)), seen):
+    always = float(_c('PUBLIC_ALWAYS_KM', 20))           # every repeater this close is shown and selectable
+    near = publicdir.nearby(loc['lat'], loc['lon'], max(out['radius_km'], always), 'repeater', 1000, seen)
+    core = [x for x in near if x[0] <= always]
+    rest = [x for x in near if x[0] > always and x[0] <= out['radius_km']]
+    out['always_km'] = always
+    for d, rec in core + rest[:max(0, int(_c('PUBLIC_MAX_NEARBY', 12)) - len(core))]:
         gain, gsrc = publicdir.override_gain(rec)
         out['items'].append(_item('public', rec['key'], rec['name'], rec['lat'], rec['lon'], gain, gsrc, loc, tx, f, None))
     return out

@@ -64,9 +64,12 @@
   <div id="tracker-bar"><span class="tracker-bar-label">Trails</span><span id="tracker-list"><span class="tracker-none">no Tracker-named devices seen yet</span></span></div>
   <div id="sim-bar" class="log-toolbar" style="flex-wrap:wrap">
     <label class="tracker-chip"><input type="checkbox" id="sim-toggle" checked>Public repeaters &amp; simulated links</label>
+    <select id="sim-pick" class="config-select" onchange="simPickShow()" style="max-width:300px"><option value="">Base stations...</option></select>
+    <button class="btn btn-send" onclick="simPickSteer()" style="font-size:10px;padding:4px 10px">Point antenna</button>
     <span class="send-status" id="sim-info"></span>
   </div>
   <div id="leaflet-map"></div>
+  <div id="mount-slew" class="mount-slew" style="display:none"><div class="ms-title">&gt;&gt;&gt;&gt;Mount Slewing&lt;&lt;&lt;&lt;</div><div class="ms-az" id="ms-az">Azimuth -</div></div>
 </div>
 
 <!-- Neighbours -->
@@ -122,7 +125,7 @@
         <div class="config-row"><span class="config-label">Payload<div class="config-hint">Placeholders: {azimuth} 123.4, {azimuth_int} 123, {target} repeater name. JSON works, e.g. {"azimuth": {azimuth}}</div></span><input id="st-payload" type="text" class="config-num" maxlength="300" style="width:300px"></div>
         <div class="config-row"><span class="config-label">QoS</span><select id="st-qos" class="config-num" style="width:90px"><option value="0">0</option><option value="1">1 (wait for ack)</option></select></div>
         <div class="config-row"><span class="config-label">Retain</span><input id="st-retain" type="checkbox"></div>
-        <div class="config-row"><span class="config-label">Also update modelled aim<div class="config-hint">Move the map beam to the commanded bearing when a command is sent</div></span><input id="st-also" type="checkbox" checked></div>
+        <div class="config-row"><span class="config-label">Also update modelled aim<div class="config-hint">Move the map beam to the commanded bearing when a command is sent (not used with the Sky-Watcher mount: there the beam follows the real bearing as it turns)</div></span><input id="st-also" type="checkbox" checked></div>
       </div>
       <div class="config-actions"><button class="btn btn-send" onclick="steerSave()">Save steering settings</button><button class="btn" onclick="steerAimField()">Steer to the Aim field now</button><span class="send-status" id="st-status"></span></div>
       <div class="config-hint" id="st-info"></div>

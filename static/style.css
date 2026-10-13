@@ -208,3 +208,12 @@
 .jump-bar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:.4rem;padding:.4rem 0 .6rem;margin-bottom:.4rem;background:var(--bg,#0b0e11);border-bottom:1px solid var(--border)}
 .jump-bar a{font-size:10px;letter-spacing:.06em;color:var(--text-muted);text-decoration:none;border:1px solid var(--border);border-radius:3px;padding:3px 9px}
 .jump-bar a:hover{color:var(--accent);border-color:var(--accent)}
+
+/* Mount slewing banner over the map */
+#page-map{position:relative}
+.mount-slew{position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:1200;pointer-events:none;text-align:center;
+  background:rgba(10,12,15,.88);border:2px solid var(--danger);border-radius:6px;padding:.55rem 1.4rem;color:var(--danger);
+  font-family:'Share Tech Mono','JetBrains Mono',monospace;animation:msflash .8s steps(1,end) infinite}
+.mount-slew .ms-title{font-size:20px;font-weight:700;letter-spacing:.12em;white-space:nowrap}
+.mount-slew .ms-az{font-size:16px;margin-top:2px}
+@keyframes msflash{0%{opacity:1}50%{opacity:.2}100%{opacity:1}}

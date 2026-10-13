@@ -549,23 +549,30 @@ let ANT_REF_RADIUS_M = 400, refLayer = null;
 function antReachKm(gainDbi){ return ANT_REF_RADIUS_M / 1000 * Math.pow(10, gainDbi / 20); }
 function fmtReach(km){ return km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km'; }
 
+let beamLayer = null;   // our antenna's beam: its own layer so it can follow the mount without redrawing (and closing popups of) the repeaters
 function drawBeam(loc, d){
   // Azimuth pattern of OUR directional antenna drawn around the repeater (lobe length ~ field strength).
-  const a = loc.antenna; if (!a || !a.directional) return;
+  if (beamLayer){ beamLayer.remove(); beamLayer = null; }
+  const a = loc.antenna; if (!a || !a.directional || !leafletMap) return;
+  beamLayer = L.layerGroup().addTo(leafletMap);
   const far = antReachKm(a.gain_dbi), pts = [];
   for (let t = 0; t < 360; t += 5) pts.push(destPoint(loc.lat, loc.lon, a.azimuth_deg + t, far * patField(t, a.front_back_db, a.hpbw_deg)));
   if (window.planBest != null && Math.abs(window.planBest - a.azimuth_deg) > 2)
     L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, window.planBest, far * 1.1)], {color: '#00e5a0', weight: 2, dashArray: '2 4', interactive: false})
-      .addTo(simLayer).bindTooltip('suggested ' + window.planBest + '\u00b0', {permanent: true, direction: 'top', className: 'link-label'});
-  L.polygon(pts, {color: '#5b8def', weight: 1, fillColor: '#5b8def', fillOpacity: .12, interactive: false}).addTo(simLayer);
+      .addTo(beamLayer).bindTooltip('suggested ' + window.planBest + '\u00b0', {permanent: true, direction: 'top', className: 'link-label'});
+  L.polygon(pts, {color: '#5b8def', weight: 1, fillColor: '#5b8def', fillOpacity: .12, interactive: false}).addTo(beamLayer);
   L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, a.azimuth_deg, far * 1.1)], {color: '#5b8def', weight: 2, dashArray: '2 4', interactive: false})
-    .addTo(simLayer).bindTooltip(a.type + ' ' + a.azimuth_deg + '\u00b0 | ' + a.gain_dbi + ' dBi | F/B ' + a.front_back_db + ' dB | reach ~' + fmtReach(far), {permanent: true, direction: 'top', className: 'link-label'});
+    .addTo(beamLayer).bindTooltip(a.type + ' ' + a.azimuth_deg + '\u00b0 | ' + a.gain_dbi + ' dBi | F/B ' + a.front_back_db + ' dB | reach ~' + fmtReach(far), {permanent: true, direction: 'top', className: 'link-label'});
 }
 
 function drawSim(d){
+  // With a calibrated mount the beam shows where the antenna REALLY points, never a stale/target value.
+  if (window.mountCfg && window.mountCfg.calibrated && window.mountBearing != null && d.local && d.local.antenna && d.local.antenna.directional)
+    d.local.antenna.azimuth_deg = window.mountBearing;
   window.lastSim = d;                              // so a reference-radius change can redraw without a fetch
   if (!leafletMap || typeof L === 'undefined') return;
   if (simLayer){ simLayer.remove(); simLayer = null; }
+  if (beamLayer){ beamLayer.remove(); beamLayer = null; }
   window.simKeys = new Set();
   const info = document.getElementById('sim-info');
   const loc = d.local || {};
@@ -579,8 +586,9 @@ function drawSim(d){
   if (d.note){ info.textContent = d.note; return; }
   simLayer = L.layerGroup().addTo(leafletMap);
   window.simItems = d.items;                       // simPopup/steerIdx look repeaters up by index
+  window.simMarkers = [];
   drawBeam(loc, d);
-  d.items.forEach(it => {
+  d.items.forEach((it, idx) => {
     const disc = it.source === 'discovered';
     const col = it.measured && it.measured.snr != null && disc ? linkColour(it.measured.snr) : simColour(it.rssi_dbm);
     if (disc) window.simKeys.add(it.key.length > 8 ? '!' + it.key.slice(0, 8) : '!' + it.key);
@@ -588,11 +596,13 @@ function drawSim(d){
     const lbl = 'sim PL ' + it.pathloss_db + ' dB' + (it.measured && it.measured.pathloss_db != null ? ' | meas ' + it.measured.pathloss_db : '');
     line.bindTooltip(lbl, {permanent: disc, direction: 'center', className: 'link-label', sticky: !disc});
     line.bindPopup(simPopup(it, loc));
+    window.simMarkers[idx] = line;
     if (!disc){
-      L.circleMarker([it.lat, it.lon], {radius: 5, color: '#5b8def', fillColor: '#5b8def', fillOpacity: .8, weight: 1})
+      window.simMarkers[idx] = L.circleMarker([it.lat, it.lon], {radius: 5, color: '#5b8def', fillColor: '#5b8def', fillOpacity: .8, weight: 1})
         .addTo(simLayer).bindPopup(simPopup(it, loc)).bindTooltip(it.name || it.key.slice(0, 8));
     }
   });
+  simPickFill(d);
   const disc = d.items.filter(i => i.source === 'discovered').length;
   info.textContent = (loc.antenna && loc.antenna.directional ? loc.antenna.type + ' ' + loc.antenna.azimuth_deg + '\u00b0, ' + loc.antenna.gain_dbi + ' dBi, F/B ' + loc.antenna.front_back_db + ' dB - ' : '') + d.items.length + ' repeater(s): ' + disc + ' heard, ' + (d.items.length - disc) + ' public within ' + d.radius_km + ' km - '
     + d.tx_dbm + ' dBm TX, ' + d.freq_mhz + ' MHz, free-space (best case)'
@@ -838,7 +848,8 @@ function steerSend(az, target){
   if (act === 'skywatcher') window.mountBoost = Date.now() + 25000;
   return post('/api/steer', {azimuth: az, target: target || null, settings: f}).then(d => {
     if (!d.ok){ show(d.error, false); steerLoad(true); return; }
-    show(d.detail, true); if (d.antenna) antFill(d.antenna); steerLoad(true);
+    show(d.detail, true); if (d.antenna && act !== 'skywatcher') antFill(d.antenna); steerLoad(true);
+    if (act === 'skywatcher' && window.mountKick) window.mountKick();
     return Promise.resolve(typeof loadSim === 'function' ? loadSim() : null).then(() => {
       const i = document.getElementById('sim-info'); if (i) i.textContent = '\u2713 ' + d.detail + ' - ' + i.textContent; });
   }).catch(e => show('Error: ' + e, false));
@@ -874,6 +885,7 @@ function mountFill(d, keepForm){
   v('mt-info').textContent = t;
   const rb = v('mt-restore'); if (rb) rb.style.display = d.power_cycled ? '' : 'none';
   window.mountCfg = {host: s.host, calibrated: !!d.calibrated, moving: !!d.moving};
+  mountBanner(d);
   mountFollow(d);
 }
 // The ghost / beam on the map follows where the antenna REALLY points (read back from the mount).
@@ -885,8 +897,8 @@ function mountFollow(d){
   if (az && document.activeElement !== az) az.value = d.bearing;       // preview ghost (antenna type dropdown) uses this field
   if (!changed) return;
   const a = window.lastSim && window.lastSim.local && window.lastSim.local.antenna;
-  if (a) { a.azimuth_deg = d.bearing; try { drawSim(window.lastSim); } catch (e) {} }   // saved beam; drawSim also redraws the ghosts
-  else if (typeof antGhost === 'function') antGhost();
+  if (a) { a.azimuth_deg = d.bearing; try { if (simLayer) drawBeam(window.lastSim.local, window.lastSim); } catch (e) {} }   // only the beam moves
+  if (typeof antGhost === 'function') antGhost();                                                              // + the antenna-type ghost
   const src = document.getElementById('ant-src');
   if (src && a && a.directional) src.textContent = 'Current: ' + a.type + ' ' + a.gain_dbi + ' dBi aimed at ' + d.bearing + '\u00b0 true (read from the mount), F/B ' + a.front_back_db + ' dB';
 }
@@ -896,7 +908,7 @@ function mountCall(url, body, okMsg){
   setStatus('mt-status', 'Working...', 'ok');
   return post(url, body).then(d => {
     if (!d.ok) { setStatus('mt-status', d.error, 'err'); return; }
-    setStatus('mt-status', d.detail || okMsg || 'Done', 'ok'); mountFill(d, true);
+    setStatus('mt-status', d.detail || okMsg || 'Done', 'ok'); mountFill(d, true); if (window.mountKick) window.mountKick();
   }).catch(e => setStatus('mt-status', 'Error: ' + e, 'err'));
 }
 function mountSave(){ return mountCall('/api/mount/settings', mountForm(), 'Saved'); }
@@ -914,12 +926,15 @@ function mountRestore(){
 }
 mountLoad(false);
 (function mountPollLoop(){
+  let timer = null;
   const tick = () => {
+    clearTimeout(timer);
     const cfg = window.mountCfg, fast = (cfg && cfg.moving) || Date.now() < (window.mountBoost || 0);
     const go = !document.hidden && cfg && cfg.host && cfg.calibrated;
-    (go ? mountLoad(true) : Promise.resolve()).then(() => setTimeout(tick, fast ? 1000 : 8000));
+    (go ? mountLoad(true) : Promise.resolve()).then(() => { timer = setTimeout(tick, fast ? 500 : 8000); });
   };
-  setTimeout(tick, 3000);
+  window.mountKick = () => { window.mountBoost = Date.now() + 25000; tick(); };      // a command was just sent: poll now, and fast
+  timer = setTimeout(tick, 3000);
 })();
 
 // ---- MQTT monitor page ----
@@ -991,3 +1006,32 @@ function testNav(){
     .map(c => '<a href="#" onclick="testJump(\'' + c[0] + '\');return false">' + c[1] + '</a>').join('');
 }
 function testJump(id){ const e = document.getElementById(id); if (e) e.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+
+// ---- base-station picker on the Map page (every repeater within ALWAYS km is listed, nearest first) ----
+function simPickFill(d){
+  const sel = document.getElementById('sim-pick'); if (!sel) return;
+  const keep = sel.value ? (window.simItems[+sel.value] || {}).key : null;
+  const rows = d.items.map((it, i) => [i, it]).sort((a, b) => a[1].distance_km - b[1].distance_km);
+  sel.innerHTML = '<option value="">Base stations (' + rows.length + ')...</option>' + rows.map(r => '<option value="' + r[0] + '">'
+    + escHtml(r[1].name || r[1].key.slice(0, 8)) + ' - ' + r[1].distance_km + ' km, ' + r[1].bearing_deg + '\u00b0' + (r[1].source === 'discovered' ? ' (heard)' : '') + '</option>').join('');
+  if (keep){ const k = d.items.findIndex(i => i.key === keep); if (k >= 0) sel.value = String(k); }
+}
+function simPickShow(){
+  const sel = document.getElementById('sim-pick'); if (!sel || sel.value === '') return;
+  const it = (window.simItems || [])[+sel.value], m = (window.simMarkers || [])[+sel.value];
+  if (!it || !leafletMap) return;
+  leafletMap.panTo([it.lat, it.lon]);
+  if (m && m.openPopup) m.openPopup([it.lat, it.lon]);
+}
+function simPickSteer(){
+  const sel = document.getElementById('sim-pick');
+  if (!sel || sel.value === ''){ const i = document.getElementById('sim-info'); if (i) i.textContent = 'Pick a base station first'; return; }
+  steerIdx(+sel.value);
+}
+
+// ---- Mount slewing banner (flashing, red) ----
+function mountBanner(d){
+  const el = document.getElementById('mount-slew'); if (!el) return;
+  el.style.display = d && d.moving ? '' : 'none';
+  if (d && d.moving) document.getElementById('ms-az').textContent = 'Azimuth ' + (d.bearing != null ? d.bearing.toFixed(1) + '\u00b0' : '-');
+}

@@ -134,7 +134,9 @@ def test_steer_action_uses_mount(mount, monkeypatch):
     steer.save_settings({'action': 'skywatcher', 'also_model': True})
     r = steer.steer(130)
     assert r['action'] == 'skywatcher' and 'slewing' in r['detail']
-    assert antenna.override()['azimuth_deg'] == 130
+    # the modelled aim must NOT jump to the target at command time; it follows the mount's real bearing
+    assert (antenna.override() or {}).get('azimuth_deg') != 130
+    assert sw.sync_model() is True and antenna.override()['azimuth_deg'] == 130      # fake mount arrives instantly
     mount.err = 'j'
     with pytest.raises(RuntimeError, match='refused'):
         steer.steer(150)
@@ -212,3 +214,18 @@ def test_restore_route_and_sync_in_routes(mount):
     d = c.get('/api/mount').get_json()
     assert d['power_cycled'] and c.post('/api/mount/nudge', json={'delta': 5}).get_json()['ok'] is False
     assert c.post('/api/mount/restore').get_json()['ok']
+
+
+def test_route_does_not_persist_aim_while_moving(mount, monkeypatch):
+    from bridge import web  # noqa: F401
+    from bridge.extensions import app
+    c = app.test_client()
+    c.post('/api/mount/calibrate', json={'settings': {'ref_bearing': 100}})
+    saved = []
+    monkeypatch.setattr(sw, 'sync_model', lambda st=None: saved.append(1) or False)
+    monkeypatch.setattr(sw, '_running', lambda s: True)                # mount reports "running"
+    d = c.get('/api/mount').get_json()
+    assert d['moving'] is True and saved == []                         # no file write per poll while it turns
+    monkeypatch.setattr(sw, '_running', lambda s: False)
+    c.get('/api/mount')
+    assert saved == [1]

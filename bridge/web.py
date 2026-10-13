@@ -233,7 +233,8 @@ def api_mqtt_clear():
 def api_mount():
     def go():
         st = skywatcher.status()
-        skywatcher.sync_model(st)                    # the map beam / ghosts follow the real bearing
+        if not st.get("moving"):
+            skywatcher.sync_model(st)                # saved once it has stopped (no file write per poll while turning)
         return st
     return _guard(go)
 
@@ -250,7 +251,8 @@ def _mount_call(fn):
     except skywatcher.MountError as e:
         return {"ok": False, "error": str(e)}
     st = skywatcher.status()
-    skywatcher.sync_model(st)
+    if not st.get("moving"):
+        skywatcher.sync_model(st)
     return dict(st, detail=res.get("detail"))
 
 

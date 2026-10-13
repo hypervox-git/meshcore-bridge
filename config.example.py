@@ -64,6 +64,7 @@ PUBLIC_NODES_URL         = "https://map.meshcore.io/api/v1/nodes"   # community 
 PUBLIC_NODES_FILE        = None   # or a local JSON file in the same shape (offline / manual)
 PUBLIC_RADIUS_KM         = 40     # show public repeaters within this distance of us
 PUBLIC_MAX_NEARBY        = 12     # ...at most this many (nearest first)
+PUBLIC_ALWAYS_KM         = 20     # ...but ALWAYS every repeater within this distance, however many there are
 PUBLIC_REFRESH_HOURS     = 24
 RADIO_FREQ_MHZ           = 869.618   # used if the repeater's `get radio` can't be read
 # Antenna gain for specific repeaters (name or public-key prefix) when it is published
