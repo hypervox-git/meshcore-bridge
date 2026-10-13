@@ -502,7 +502,8 @@ function patField(t, fb, hpbw){
   const r = Math.pow(10, -fb / 20);
   if (hpbw){
     const h = Math.max(10, Math.min(hpbw, 270)), n = Math.log(Math.SQRT1_2) / Math.log(Math.cos(h / 4 * Math.PI / 180));
-    return Math.max(Math.pow(Math.max(Math.cos(Math.min(Math.abs(t), 180) * Math.PI / 360), 0), n), r);
+    const a = ((t % 360) + 360) % 360, off = a > 180 ? 360 - a : a;           // fold: the pattern is symmetric about boresight
+    return Math.max(Math.pow(Math.max(Math.cos(off * Math.PI / 360), 0), n), r);
   }
   const beta = (1 - r) / (1 + r);
   return Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
@@ -660,7 +661,8 @@ function antSave(){
 antLoad();
 
 // ---- common 868 MHz antennas: dropdown presets + ghost pattern on the map --------------------
-// Typical figures for what people actually buy/build for 863-870 MHz (azimuth plane, vertical polarisation).
+// Typical figures for what people actually buy/build for 863-870 MHz. ALWAYS vertically polarised, so the azimuth
+// plane is the antenna's H-plane (Yagi elements vertical): beamwidths below are H-plane, a little wider than the E-plane.
 // Real antennas vary +/- 1-2 dB and the pattern is a smooth idealisation - use as a starting point and edit.
 // [label, type text, gain dBi, front-to-back dB, -3 dB azimuth beamwidth (null = omni / derive from F/B)]
 const ANT_PRESETS = [
@@ -670,10 +672,10 @@ const ANT_PRESETS = [
   ['Fibreglass collinear (5.8 dBi)',      'Collinear 5.8',   5.8,  0, 'omni'],
   ['Fibreglass collinear (8 dBi)',        'Collinear 8',     8.0,  0, 'omni'],
   ['Moxon rectangle (~5.5 dBi)',          'Moxon',           5.5, 25, null],
-  ['2-element Yagi (~6.5 dBi)',           'Yagi 2el',        6.5, 12, 85],
-  ['3-element Yagi (~8 dBi)',             'Yagi 3el',        8.0, 15, 68],
-  ['5-element Yagi (~10.5 dBi)',          'Yagi 5el',       10.5, 18, 52],
-  ['9-element Yagi (~13 dBi)',            'Yagi 9el',       13.0, 20, 38],
+  ['2-element Yagi (~6.5 dBi)',           'Yagi 2el',        6.5, 12, 100],
+  ['3-element Yagi (~8 dBi)',             'Yagi 3el',        8.0, 15, 80],
+  ['5-element Yagi (~10.5 dBi)',          'Yagi 5el',       10.5, 18, 60],
+  ['9-element Yagi (~13 dBi)',            'Yagi 9el',       13.0, 20, 42],
   ['Flat patch / panel (~8 dBi)',         'Panel 8',         8.0, 18, 70],
   ['Sector 90 deg (~10 dBi)',             'Sector 90',      10.0, 20, 90],
   ['Corner reflector / grid (~12 dBi)',   'Corner 12',      12.0, 22, 50],

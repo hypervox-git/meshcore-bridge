@@ -200,3 +200,11 @@ def test_beamwidth_save_and_clear(tmp_path, monkeypatch):
     for bad in ({'hpbw_deg': 5}, {'hpbw_deg': 300}):
         with pytest.raises(ValueError):
             antenna.validate(bad)
+
+
+def test_pattern_symmetric_about_boresight():
+    g = linkmodel.antenna_gain_dbi
+    for hp in (None, 42, 100):
+        for off in (10, 45, 90, 135, 170):
+            assert g(off, 10, 20, hp) == pytest.approx(g(360 - off, 10, 20, hp), abs=1e-9)
+            assert g(off, 10, 20, hp) == pytest.approx(g(-off, 10, 20, hp), abs=1e-9)

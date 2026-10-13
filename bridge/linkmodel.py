@@ -56,7 +56,9 @@ def _field(off_deg, front_back_db, hpbw_deg=None):
     if hpbw_deg:
         h = max(10.0, min(float(hpbw_deg), 270.0))
         n = math.log(math.sqrt(0.5)) / math.log(math.cos(math.radians(h / 4.0)))
-        e = max(math.cos(math.radians(min(off_deg, 180.0)) / 2.0), 0.0) ** n
+        off = abs(off_deg) % 360.0
+        off = 360.0 - off if off > 180.0 else off              # fold to 0-180
+        e = max(math.cos(math.radians(off) / 2.0), 0.0) ** n
     else:
         b = _beta(front_back_db)
         e = (1 + b * math.cos(math.radians(off_deg))) / (1 + b)

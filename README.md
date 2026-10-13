@@ -156,7 +156,7 @@ loss. `/api/public/status` shows what the directory returned (count, last error,
 The Antenna card also has a **Common 868 MHz antennas** dropdown (whips, collinears, Moxon, 2-9 element Yagis, panel,
 sector, corner reflector). Picking one fills in typical gain / front-to-back / beamwidth and draws an amber dashed
 **ghost** of its azimuth pattern on the Map tab, aimed at the Aim field (edit any field and the ghost follows). Nothing
-is applied until **Save antenna**. The figures are typical, not measured - edit them to match your antenna. A blank
+is applied until **Save antenna**. The antenna is always assumed vertically polarised, so the pattern shown is the azimuth (H-plane) one. The figures are typical, not measured - edit them to match your antenna. A blank
 beamwidth keeps the Moxon-style wide lobe derived from front-to-back.
 
 ### Line of sight and antenna orientation planner
