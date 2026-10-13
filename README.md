@@ -153,6 +153,12 @@ the map. Remote antenna gain: a gain field in the directory if present, a figure
 `ANTENNA_GAIN_DBI` overrides, else 0 dBi (assumed). Free space is a best case - real paths only add
 loss. `/api/public/status` shows what the directory returned (count, last error, a sample record).
 
+The Antenna card also has a **Common 868 MHz antennas** dropdown (whips, collinears, Moxon, 2-9 element Yagis, panel,
+sector, corner reflector). Picking one fills in typical gain / front-to-back / beamwidth and draws an amber dashed
+**ghost** of its azimuth pattern on the Map tab, aimed at the Aim field (edit any field and the ghost follows). Nothing
+is applied until **Save antenna**. The figures are typical, not measured - edit them to match your antenna. A blank
+beamwidth keeps the Moxon-style wide lobe derived from front-to-back.
+
 ### Line of sight and antenna orientation planner
 
 Test tab -> *Analyse* (or `POST /api/plan/run`, then `GET /api/plan`). For the nearest public repeaters

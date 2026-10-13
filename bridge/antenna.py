@@ -22,7 +22,7 @@ def _file():
     return _c('ANTENNA_FILE', 'meshcore_antenna.json')
 
 
-FIELDS = {'type': str, 'gain_dbi': float, 'azimuth_deg': float, 'front_back_db': float, 'directional': bool}
+FIELDS = {'type': str, 'gain_dbi': float, 'azimuth_deg': float, 'front_back_db': float, 'hpbw_deg': float, 'directional': bool}
 
 
 def override():
@@ -63,7 +63,7 @@ def validate(d):
     if 'directional' in d:
         out['directional'] = bool(d['directional'])
     for k, lo, hi, label in (('gain_dbi', -10, 30, 'gain'), ('azimuth_deg', None, None, 'azimuth'),
-                             ('front_back_db', 0, 60, 'front-to-back')):
+                             ('front_back_db', 0, 60, 'front-to-back'), ('hpbw_deg', 10, 270, 'beamwidth')):
         if k in d and d[k] not in (None, ''):
             try:
                 v = float(d[k])
@@ -83,6 +83,8 @@ def save(update, reason=''):
         update = {'azimuth_deg': update}
     cur = override() or {}
     cur.update(validate(update))
+    if 'hpbw_deg' in update and update['hpbw_deg'] in (None, ''):
+        cur.pop('hpbw_deg', None)                       # blank = back to the F/B-derived cardioid
     cur['reason'], cur['set_at'] = reason, time.time()
     tmp = _file() + '.tmp'
     with open(tmp, 'w') as f:
@@ -98,13 +100,13 @@ def reset():
         pass
 
 
-def aim_at(points, gain_dbi, front_back_db):
+def aim_at(points, gain_dbi, front_back_db, hpbw_deg=None):
     """Boresight azimuth that points the pattern 'directly at' a set of bearings: maximise the
     WORST gain among them (fairness: centre of the smallest enclosing arc), then the total."""
     best = None
     for tenth in range(0, 3600, 2):
         az = tenth / 10.0
-        gains = [linkmodel.antenna_gain_dbi(linkmodel.off_boresight_deg(b, az), gain_dbi, front_back_db) for b in points]
+        gains = [linkmodel.antenna_gain_dbi(linkmodel.off_boresight_deg(b, az), gain_dbi, front_back_db, hpbw_deg) for b in points]
         key = (min(gains), sum(gains))
         if best is None or key > best[0]:
             best = (key, az, gains)
@@ -122,7 +124,7 @@ def aim_heard():
     heard = [i for i in data.get('items', []) if i['source'] == 'discovered']
     if not heard:
         raise RuntimeError('no heard neighbours with a known position yet (see the Neighbours tab)')
-    az, gains = aim_at([i['bearing_deg'] for i in heard], ant['gain_dbi'], ant['front_back_db'])
+    az, gains = aim_at([i['bearing_deg'] for i in heard], ant['gain_dbi'], ant['front_back_db'], ant.get('hpbw_deg'))
     return {'azimuth_deg': az, 'current_deg': ant['azimuth_deg'],
             'neighbours': [{'name': i['name'], 'bearing_deg': i['bearing_deg'], 'distance_km': i['distance_km'],
                             'gain_now_dbi': i['gain_local_dbi'], 'gain_new_dbi': round(g, 1)}

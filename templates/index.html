@@ -97,11 +97,14 @@
     <div class="config-section" id="ant-card">
       <div class="config-title">Antenna (our repeater)</div>
       <div class="config-hint" id="ant-src"></div>
-      <div class="config-row"><span class="config-label">Directional<div class="config-hint">Untick for an omni antenna</div></span><input id="ant-dir" type="checkbox" checked></div>
+      <div class="config-row"><span class="config-label">Directional<div class="config-hint">Untick for an omni antenna</div></span><input id="ant-dir" type="checkbox" checked onchange="antGhost()"></div>
+      <div class="config-row"><span class="config-label">Common 868 MHz antennas<div class="config-hint">Fills the fields below with typical values and shows a ghost of its pattern on the Map tab, at the aim bearing. Nothing changes until you press Save.</div></span>
+        <select id="ant-preset" class="config-num" onchange="antPreset()"></select></div>
       <div class="config-row"><span class="config-label">Type</span><input id="ant-type" type="text" class="config-num" maxlength="24" placeholder="Moxon"></div>
-      <div class="config-row"><span class="config-label">Aim / boresight (&deg; true)<div class="config-hint">Compass bearing the antenna points at, 0&ndash;360 clockwise from true north</div></span><input id="ant-az" type="number" min="0" max="360" step="1" class="config-num"></div>
-      <div class="config-row"><span class="config-label">Gain (dBi)</span><input id="ant-gain" type="number" min="-10" max="30" step="0.1" class="config-num"></div>
-      <div class="config-row"><span class="config-label">Front-to-back (dB)</span><input id="ant-fb" type="number" min="0" max="60" step="1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Aim / boresight (&deg; true)<div class="config-hint">Compass bearing the antenna points at, 0&ndash;360 clockwise from true north</div></span><input id="ant-az" oninput="antGhost()" type="number" min="0" max="360" step="1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Gain (dBi)</span><input id="ant-gain" oninput="antGhost()" type="number" min="-10" max="30" step="0.1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Front-to-back (dB)</span><input id="ant-fb" oninput="antGhost()" type="number" min="0" max="60" step="1" class="config-num"></div>
+      <div class="config-row"><span class="config-label">Beamwidth (&deg;, &minus;3 dB)<div class="config-hint">Azimuth half-power width. Leave blank to derive it from front-to-back (Moxon-style wide lobe)</div></span><input id="ant-hpbw" oninput="antGhost()" type="number" min="10" max="270" step="1" class="config-num"></div>
       <div class="config-actions"><button class="btn btn-send" onclick="antSave()">Save antenna</button><button class="btn" onclick="aimAt('reset')">Reset to config.py</button><span class="send-status" id="ant-status"></span></div>
     </div>
 

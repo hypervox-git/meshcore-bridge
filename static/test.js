@@ -496,15 +496,24 @@ function destPoint(lat, lon, brgDeg, km){
   return [p2 * 180 / Math.PI, l2 * 180 / Math.PI];
 }
 
+// Relative field strength at `t` deg off boresight (mirrors bridge/linkmodel._field): cardioid from F/B,
+// or cos(t/2)^n set by the half-power beamwidth when one is given.
+function patField(t, fb, hpbw){
+  const r = Math.pow(10, -fb / 20);
+  if (hpbw){
+    const h = Math.max(10, Math.min(hpbw, 270)), n = Math.log(Math.SQRT1_2) / Math.log(Math.cos(h / 4 * Math.PI / 180));
+    return Math.max(Math.pow(Math.max(Math.cos(Math.min(Math.abs(t), 180) * Math.PI / 360), 0), n), r);
+  }
+  const beta = (1 - r) / (1 + r);
+  return Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
+}
+
 function drawBeam(loc, d){
   // Azimuth pattern of OUR directional antenna drawn around the repeater (lobe length ~ field strength).
   const a = loc.antenna; if (!a || !a.directional) return;
-  const far = Math.max(2, ...d.items.map(i => i.distance_km)) * 0.45;
-  const r = Math.pow(10, -a.front_back_db / 20), beta = (1 - r) / (1 + r), pts = [];
-  for (let t = 0; t < 360; t += 5){
-    const e = Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
-    pts.push(destPoint(loc.lat, loc.lon, a.azimuth_deg + t, far * e));
-  }
+  const far = Math.max(2, ...d.items.map(i => i.distance_km)) * 0.45, pts = [];
+  window.beamFar = far;
+  for (let t = 0; t < 360; t += 5) pts.push(destPoint(loc.lat, loc.lon, a.azimuth_deg + t, far * patField(t, a.front_back_db, a.hpbw_deg)));
   if (window.planBest != null && Math.abs(window.planBest - a.azimuth_deg) > 2)
     L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, window.planBest, far * 1.1)], {color: '#00e5a0', weight: 2, dashArray: '2 4', interactive: false})
       .addTo(simLayer).bindTooltip('suggested ' + window.planBest + '\u00b0', {permanent: true, direction: 'top', className: 'link-label'});
@@ -524,6 +533,7 @@ function drawSim(d){
     if (gatewayMarker){ gatewayMarker.setLatLng([loc.lat, loc.lon]);
       if (!window.repGwPopup) gatewayMarker.setPopupContent('<b>' + escHtml(loc.name || 'Local repeater') + '</b><br>position from ' + escHtml(loc.source) + '<br>antenna gain ' + loc.gain_dbi + ' dBi (' + escHtml(loc.gain_src) + ')'); }
   }
+  setTimeout(antGhost, 0);                         // keep/redraw the preset ghost once the map + beam scale are known
   if (!document.getElementById('sim-toggle').checked){ info.textContent = ''; return; }
   if (d.note){ info.textContent = d.note; return; }
   simLayer = L.layerGroup().addTo(leafletMap);
@@ -633,6 +643,7 @@ function antFill(a){
   const set = (id, v) => { const e = document.getElementById(id); if (e && document.activeElement !== e && v != null) e.value = v; };
   document.getElementById('ant-dir').checked = !!a.directional;
   set('ant-type', a.type === 'omni' ? '' : a.type); set('ant-az', a.azimuth_deg); set('ant-gain', a.gain_dbi); set('ant-fb', a.front_back_db);
+  if (document.activeElement !== document.getElementById('ant-hpbw')) document.getElementById('ant-hpbw').value = a.hpbw_deg == null ? '' : a.hpbw_deg;
   document.getElementById('ant-src').textContent = a.directional ? ('Current: ' + a.type + ' ' + a.gain_dbi + ' dBi aimed at ' + a.azimuth_deg + '\u00b0 true, F/B ' + a.front_back_db + ' dB (from ' + (a.azimuth_source || 'config') + ')')
     : ('Current: omni ' + a.gain_dbi + ' dBi');
 }
@@ -640,10 +651,72 @@ function antLoad(){ fetch('/api/antenna').then(r => r.json()).then(d => { if (d.
 function antSave(){
   const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
   const body = {mode: 'settings', directional: document.getElementById('ant-dir').checked, type: document.getElementById('ant-type').value || (document.getElementById('ant-dir').checked ? 'Directional' : 'Omni'),
-                azimuth_deg: num('ant-az'), gain_dbi: num('ant-gain'), front_back_db: num('ant-fb')};
+                azimuth_deg: num('ant-az'), gain_dbi: num('ant-gain'), front_back_db: num('ant-fb'), hpbw_deg: num('ant-hpbw')};
   if (body.gain_dbi == null){ setStatus('ant-status', 'Enter the antenna gain (dBi)', 'err'); return; }
   if (body.directional && body.azimuth_deg == null){ setStatus('ant-status', 'Enter the aim bearing', 'err'); return; }
   post('/api/antenna/aim', body).then(d => { if (!d.ok){ setStatus('ant-status', d.error, 'err'); return; }
-    setStatus('ant-status', 'Saved', 'ok'); antFill(d.antenna); if (typeof loadSim === 'function') loadSim(); }).catch(e => setStatus('ant-status', 'Error: ' + e, 'err'));
+    setStatus('ant-status', 'Saved', 'ok'); antGhostClear(); document.getElementById('ant-preset').value = ''; antFill(d.antenna); if (typeof loadSim === 'function') loadSim(); }).catch(e => setStatus('ant-status', 'Error: ' + e, 'err'));
 }
 antLoad();
+
+// ---- common 868 MHz antennas: dropdown presets + ghost pattern on the map --------------------
+// Typical figures for what people actually buy/build for 863-870 MHz (azimuth plane, vertical polarisation).
+// Real antennas vary +/- 1-2 dB and the pattern is a smooth idealisation - use as a starting point and edit.
+// [label, type text, gain dBi, front-to-back dB, -3 dB azimuth beamwidth (null = omni / derive from F/B)]
+const ANT_PRESETS = [
+  ['Rubber duck / stubby (~0 dBi)',       'Rubber duck',     0.0,  0, 'omni'],
+  ['1/4-wave whip / ground plane (2 dBi)', 'Quarter-wave GP', 2.2,  0, 'omni'],
+  ['5/8-wave ground plane (5 dBi)',       '5/8 GP',          5.0,  0, 'omni'],
+  ['Fibreglass collinear (5.8 dBi)',      'Collinear 5.8',   5.8,  0, 'omni'],
+  ['Fibreglass collinear (8 dBi)',        'Collinear 8',     8.0,  0, 'omni'],
+  ['Moxon rectangle (~5.5 dBi)',          'Moxon',           5.5, 25, null],
+  ['2-element Yagi (~6.5 dBi)',           'Yagi 2el',        6.5, 12, 85],
+  ['3-element Yagi (~8 dBi)',             'Yagi 3el',        8.0, 15, 68],
+  ['5-element Yagi (~10.5 dBi)',          'Yagi 5el',       10.5, 18, 52],
+  ['9-element Yagi (~13 dBi)',            'Yagi 9el',       13.0, 20, 38],
+  ['Flat patch / panel (~8 dBi)',         'Panel 8',         8.0, 18, 70],
+  ['Sector 90 deg (~10 dBi)',             'Sector 90',      10.0, 20, 90],
+  ['Corner reflector / grid (~12 dBi)',   'Corner 12',      12.0, 22, 50],
+];
+let ghostLayer = null;
+
+(function antPresetInit(){
+  const sel = document.getElementById('ant-preset'); if (!sel) return;
+  sel.innerHTML = '<option value="">-- none (no ghost) --</option>' + ANT_PRESETS.map((p, i) => '<option value="' + i + '">' + escHtml(p[0]) + '</option>').join('');
+})();
+
+function antGhostClear(){ if (ghostLayer){ ghostLayer.remove(); ghostLayer = null; } }
+
+// Ghost = what the antenna currently described by the form would look like on the map, aimed at the Aim field.
+function antGhost(){
+  antGhostClear();
+  const sel = document.getElementById('ant-preset');
+  if (!sel || sel.value === '' || !leafletMap || typeof L === 'undefined') return;
+  const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+  const dir = document.getElementById('ant-dir').checked, gain = num('ant-gain'), lat = GATEWAY_LAT, lon = GATEWAY_LON;
+  if (gain == null || (!lat && !lon)) return;
+  const far = window.beamFar || 3, az = num('ant-az') || 0, name = document.getElementById('ant-type').value || 'antenna';
+  ghostLayer = L.layerGroup().addTo(leafletMap);
+  const st = {color: '#ffb020', weight: 1.5, dashArray: '5 5', fillColor: '#ffb020', fillOpacity: .07, interactive: false};
+  if (!dir){                                      // omni: a circle (azimuth plane)
+    L.circle([lat, lon], Object.assign({radius: far * 1000 * 0.6}, st)).addTo(ghostLayer)
+      .bindTooltip('ghost: ' + name + ' | ' + gain + ' dBi | omni', {permanent: true, direction: 'top', className: 'link-label'});
+    return;
+  }
+  const fb = num('ant-fb') == null ? 25 : num('ant-fb'), hp = num('ant-hpbw'), pts = [];
+  for (let t = 0; t < 360; t += 5) pts.push(destPoint(lat, lon, az + t, far * patField(t, fb, hp)));
+  L.polygon(pts, st).addTo(ghostLayer);
+  L.polyline([[lat, lon], destPoint(lat, lon, az, far * 1.1)], {color: '#ffb020', weight: 2, dashArray: '2 4', interactive: false})
+    .addTo(ghostLayer).bindTooltip('ghost: ' + name + ' ' + az + '\u00b0 | ' + gain + ' dBi | F/B ' + fb + ' dB' + (hp ? ' | BW ' + hp + '\u00b0' : ''), {permanent: true, direction: 'top', className: 'link-label'});
+}
+
+function antPreset(){
+  const sel = document.getElementById('ant-preset'), set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
+  if (sel.value === ''){ antGhostClear(); return; }
+  const p = ANT_PRESETS[+sel.value], omni = p[4] === 'omni';
+  document.getElementById('ant-dir').checked = !omni;
+  set('ant-type', p[1]); set('ant-gain', p[2]); set('ant-fb', omni ? '' : p[3]); set('ant-hpbw', omni ? '' : p[4]);
+  if (!omni && document.getElementById('ant-az').value === '') set('ant-az', 0);
+  antGhost();
+  setStatus('ant-status', 'Preview only - ghost shown on the Map tab. Save to apply.', 'ok');
+}

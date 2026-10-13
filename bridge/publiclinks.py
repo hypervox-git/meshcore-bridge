@@ -35,9 +35,10 @@ def local_info():
     ant, asrc = antenna_cfg.effective(_c('LOCAL_ANTENNA', None))
     if ant and ant.get('directional', True):
         fb = float(ant['front_back_db'])
+        hp = float(ant['hpbw_deg']) if ant.get('hpbw_deg') else None
         antenna = {'type': ant['type'], 'gain_dbi': float(ant['gain_dbi']), 'azimuth_deg': float(ant['azimuth_deg']) % 360,
-                   'azimuth_source': asrc, 'front_back_db': fb,
-                   'beamwidth_deg': round(linkmodel.half_power_beamwidth_deg(fb), 0), 'directional': True}
+                   'azimuth_source': asrc, 'front_back_db': fb, 'hpbw_deg': hp,
+                   'beamwidth_deg': round(linkmodel.half_power_beamwidth_deg(fb, hp), 0), 'directional': True}
         gsrc = f"{asrc}: {antenna['type']}"
     elif ant:                                           # defined, but marked omni
         antenna = {'type': ant['type'], 'gain_dbi': float(ant['gain_dbi']), 'directional': False}
@@ -56,7 +57,7 @@ def _item(src, key, name, lat, lon, gain, gain_src, loc, tx, f, measured):
     ant = loc['antenna']
     brg = linkmodel.bearing_deg(loc['lat'], loc['lon'], lat, lon)
     off = linkmodel.off_boresight_deg(brg, ant['azimuth_deg']) if ant['directional'] else 0.0
-    g_local = (linkmodel.antenna_gain_dbi(off, ant['gain_dbi'], ant['front_back_db'])
+    g_local = (linkmodel.antenna_gain_dbi(off, ant['gain_dbi'], ant['front_back_db'], ant.get('hpbw_deg'))
                if ant['directional'] else ant['gain_dbi'])
     sim = linkmodel.simulate(linkmodel.haversine_km(loc['lat'], loc['lon'], lat, lon), f, tx, g_local, gain)
     sim['gain_local_dbi'] = round(g_local, 1)

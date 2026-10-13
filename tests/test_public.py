@@ -171,3 +171,32 @@ def test_antenna_validation():
         with pytest.raises(ValueError):
             antenna.validate(bad)
     assert antenna.validate({'azimuth_deg': -10, 'type': ' Yagi '}) == {'azimuth_deg': 350.0, 'type': 'Yagi'}
+
+
+def test_beamwidth_pattern():
+    g = linkmodel.antenna_gain_dbi
+    for hp in (40, 70, 110):
+        assert g(0, 10, 20, hp) == pytest.approx(10, abs=0.01)
+        assert g(hp / 2, 10, 20, hp) == pytest.approx(10 - 3.01, abs=0.05)         # -3 dB at half the beamwidth
+        assert g(180, 10, 20, hp) == pytest.approx(10 - 20, abs=0.01)              # F/B floor
+        assert linkmodel.half_power_beamwidth_deg(20, hp) == hp
+    assert g(60, 10, 20, 40) < g(60, 10, 20, 110)                                  # narrower beam falls off faster
+    assert g(45, 5.5, 25, None) == linkmodel.antenna_gain_dbi(45, 5.5, 25)         # no beamwidth = unchanged cardioid
+
+
+def test_beamwidth_save_and_clear(tmp_path, monkeypatch):
+    from bridge import antenna
+    dirfile(tmp_path, monkeypatch, RECS)
+    cli.latest.update(name='Ironhorse', radio_cfg='869.618,62.5,8,8', neighbours=[])
+    cfg = {'GATEWAY_LAT': 0, 'GATEWAY_LON': 0, 'ANTENNA_FILE': str(tmp_path / 'ant.json')}
+    for m in (publiclinks, antenna):
+        monkeypatch.setattr(m, '_c', lambda n, d: cfg.get(n, d))
+    antenna.save({'type': 'Yagi 5el', 'gain_dbi': 10.5, 'azimuth_deg': 90, 'front_back_db': 18, 'hpbw_deg': 52, 'directional': True}, 'ui')
+    a = publiclinks.local_info()['antenna']
+    assert a['hpbw_deg'] == 52.0 and a['beamwidth_deg'] == 52
+    antenna.save({'type': 'Moxon', 'hpbw_deg': None}, 'ui')                         # blank clears it
+    a = publiclinks.local_info()['antenna']
+    assert a['hpbw_deg'] is None and 120 < a['beamwidth_deg'] < 150
+    for bad in ({'hpbw_deg': 5}, {'hpbw_deg': 300}):
+        with pytest.raises(ValueError):
+            antenna.validate(bad)

@@ -45,21 +45,39 @@ def _beta(front_back_db):
     return (1 - r) / (1 + r)
 
 
-def antenna_gain_dbi(off_deg, gain_dbi, front_back_db):
+def _field(off_deg, front_back_db, hpbw_deg=None):
+    """Relative FIELD strength (1.0 at boresight) in the azimuth plane, floored at the F/B level.
+
+    No beamwidth given: the cardioid-family model (see antenna_gain_dbi). With a half-power
+    beamwidth: cos(t/2)^n with n chosen so the power is exactly -3 dB at hpbw/2 - a smooth,
+    one-sided lobe whose width is set independently of the F/B ratio (needed for Yagis/panels).
+    """
+    r = 10 ** (-abs(front_back_db) / 20.0)
+    if hpbw_deg:
+        h = max(10.0, min(float(hpbw_deg), 270.0))
+        n = math.log(math.sqrt(0.5)) / math.log(math.cos(math.radians(h / 4.0)))
+        e = max(math.cos(math.radians(min(off_deg, 180.0)) / 2.0), 0.0) ** n
+    else:
+        b = _beta(front_back_db)
+        e = (1 + b * math.cos(math.radians(off_deg))) / (1 + b)
+    return max(e, r)
+
+
+def antenna_gain_dbi(off_deg, gain_dbi, front_back_db, hpbw_deg=None):
     """Gain towards a direction `off_deg` from boresight (azimuth plane).
 
-    Cardioid-family pattern E(t) = (1 + b*cos t)/(1 + b): exactly the peak gain at 0 deg and
-    exactly `front_back_db` lower at 180 deg. A good first-order model of a Moxon's wide,
-    one-sided azimuth pattern (real ones add small side lobes). Vertical polarisation is
+    Default (no `hpbw_deg`): cardioid-family pattern E(t) = (1 + b*cos t)/(1 + b): exactly the peak
+    gain at 0 deg and exactly `front_back_db` lower at 180 deg. A good first-order model of a Moxon's
+    wide, one-sided azimuth pattern (real ones add small side lobes). With `hpbw_deg` the lobe is
+    narrowed to that half-power beamwidth instead (Yagis, panels). Vertical polarisation is
     assumed so the azimuth plane is the antenna's wide plane.
     """
-    b = _beta(front_back_db)
-    e = (1 + b * math.cos(math.radians(off_deg))) / (1 + b)
-    r = 10 ** (-abs(front_back_db) / 20.0)
-    return gain_dbi + 20 * math.log10(max(e, r))
+    return gain_dbi + 20 * math.log10(_field(off_deg, front_back_db, hpbw_deg))
 
 
-def half_power_beamwidth_deg(front_back_db):
+def half_power_beamwidth_deg(front_back_db, hpbw_deg=None):
+    if hpbw_deg:
+        return float(hpbw_deg)
     b = _beta(front_back_db)
     if b <= 0:
         return 360.0

@@ -88,7 +88,7 @@ def analyse(az_step=5):
 
     def rssi_at(c, az):
         g_l = (linkmodel.antenna_gain_dbi(linkmodel.off_boresight_deg(c['bearing_deg'], az), ant['gain_dbi'],
-                                          ant['front_back_db']) if ant['directional'] else ant['gain_dbi'])
+                                          ant['front_back_db'], ant.get('hpbw_deg')) if ant['directional'] else ant['gain_dbi'])
         return tx + g_l + c['remote_gain_dbi'] - c['fspl_db'] - c['terrain_loss_db']
 
     total_w = sum(2.0 if c['heard'] else 1.0 for c in out) or 1.0
