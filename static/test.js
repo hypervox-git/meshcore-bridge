@@ -509,18 +509,23 @@ function patField(t, fb, hpbw){
   return Math.max((1 + beta * Math.cos(t * Math.PI / 180)) / (1 + beta), r);
 }
 
+// Pattern SIZE is relative to gain, from a 0 dBi reference: a 0 dBi antenna covers a circle ANT_REF_DIAMETER_KM
+// across, and free-space range scales as 10^(dBi/20) (+6 dBi = double the reach). Illustrative scale only.
+const ANT_REF_DIAMETER_KM = 0.8;
+function antReachKm(gainDbi){ return ANT_REF_DIAMETER_KM / 2 * Math.pow(10, gainDbi / 20); }
+function fmtReach(km){ return km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km'; }
+
 function drawBeam(loc, d){
   // Azimuth pattern of OUR directional antenna drawn around the repeater (lobe length ~ field strength).
   const a = loc.antenna; if (!a || !a.directional) return;
-  const far = Math.max(2, ...d.items.map(i => i.distance_km)) * 0.45, pts = [];
-  window.beamFar = far;
+  const far = antReachKm(a.gain_dbi), pts = [];
   for (let t = 0; t < 360; t += 5) pts.push(destPoint(loc.lat, loc.lon, a.azimuth_deg + t, far * patField(t, a.front_back_db, a.hpbw_deg)));
   if (window.planBest != null && Math.abs(window.planBest - a.azimuth_deg) > 2)
     L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, window.planBest, far * 1.1)], {color: '#00e5a0', weight: 2, dashArray: '2 4', interactive: false})
       .addTo(simLayer).bindTooltip('suggested ' + window.planBest + '\u00b0', {permanent: true, direction: 'top', className: 'link-label'});
   L.polygon(pts, {color: '#5b8def', weight: 1, fillColor: '#5b8def', fillOpacity: .12, interactive: false}).addTo(simLayer);
   L.polyline([[loc.lat, loc.lon], destPoint(loc.lat, loc.lon, a.azimuth_deg, far * 1.1)], {color: '#5b8def', weight: 2, dashArray: '2 4', interactive: false})
-    .addTo(simLayer).bindTooltip(a.type + ' ' + a.azimuth_deg + '\u00b0 | ' + a.gain_dbi + ' dBi | F/B ' + a.front_back_db + ' dB', {permanent: true, direction: 'top', className: 'link-label'});
+    .addTo(simLayer).bindTooltip(a.type + ' ' + a.azimuth_deg + '\u00b0 | ' + a.gain_dbi + ' dBi | F/B ' + a.front_back_db + ' dB | reach ~' + fmtReach(far), {permanent: true, direction: 'top', className: 'link-label'});
 }
 
 function drawSim(d){
@@ -534,7 +539,7 @@ function drawSim(d){
     if (gatewayMarker){ gatewayMarker.setLatLng([loc.lat, loc.lon]);
       if (!window.repGwPopup) gatewayMarker.setPopupContent('<b>' + escHtml(loc.name || 'Local repeater') + '</b><br>position from ' + escHtml(loc.source) + '<br>antenna gain ' + loc.gain_dbi + ' dBi (' + escHtml(loc.gain_src) + ')'); }
   }
-  setTimeout(antGhost, 0);                         // keep/redraw the preset ghost once the map + beam scale are known
+  setTimeout(antGhost, 0);                         // keep/redraw the preset ghost once the map is ready
   if (!document.getElementById('sim-toggle').checked){ info.textContent = ''; return; }
   if (d.note){ info.textContent = d.note; return; }
   simLayer = L.layerGroup().addTo(leafletMap);
@@ -689,7 +694,8 @@ let ghostLayer = null;
 
 function antGhostClear(){ if (ghostLayer){ ghostLayer.remove(); ghostLayer = null; } }
 
-// Ghost = what the antenna currently described by the form would look like on the map, aimed at the Aim field.
+// Ghost = what the antenna currently described by the form would look like on the map, aimed at the Aim field,
+// sized by gain (see antReachKm) so different antennas can be compared like for like.
 function antGhost(){
   antGhostClear();
   const sel = document.getElementById('ant-preset');
@@ -697,19 +703,19 @@ function antGhost(){
   const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
   const dir = document.getElementById('ant-dir').checked, gain = num('ant-gain'), lat = GATEWAY_LAT, lon = GATEWAY_LON;
   if (gain == null || (!lat && !lon)) return;
-  const far = window.beamFar || 3, az = num('ant-az') || 0, name = document.getElementById('ant-type').value || 'antenna';
+  const far = antReachKm(gain), az = num('ant-az') || 0, name = document.getElementById('ant-type').value || 'antenna';
   ghostLayer = L.layerGroup().addTo(leafletMap);
   const st = {color: '#ffb020', weight: 1.5, dashArray: '5 5', fillColor: '#ffb020', fillOpacity: .07, interactive: false};
   if (!dir){                                      // omni: a circle (azimuth plane)
-    L.circle([lat, lon], Object.assign({radius: far * 1000 * 0.6}, st)).addTo(ghostLayer)
-      .bindTooltip('ghost: ' + name + ' | ' + gain + ' dBi | omni', {permanent: true, direction: 'top', className: 'link-label'});
+    L.circle([lat, lon], Object.assign({radius: far * 1000}, st)).addTo(ghostLayer)
+      .bindTooltip('ghost: ' + name + ' | ' + gain + ' dBi | omni | reach ~' + fmtReach(far), {permanent: true, direction: 'top', className: 'link-label'});
     return;
   }
   const fb = num('ant-fb') == null ? 25 : num('ant-fb'), hp = num('ant-hpbw'), pts = [];
   for (let t = 0; t < 360; t += 5) pts.push(destPoint(lat, lon, az + t, far * patField(t, fb, hp)));
   L.polygon(pts, st).addTo(ghostLayer);
   L.polyline([[lat, lon], destPoint(lat, lon, az, far * 1.1)], {color: '#ffb020', weight: 2, dashArray: '2 4', interactive: false})
-    .addTo(ghostLayer).bindTooltip('ghost: ' + name + ' ' + az + '\u00b0 | ' + gain + ' dBi | F/B ' + fb + ' dB' + (hp ? ' | BW ' + hp + '\u00b0' : ''), {permanent: true, direction: 'top', className: 'link-label'});
+    .addTo(ghostLayer).bindTooltip('ghost: ' + name + ' ' + az + '\u00b0 | ' + gain + ' dBi | F/B ' + fb + ' dB' + (hp ? ' | BW ' + hp + '\u00b0' : '') + ' | reach ~' + fmtReach(far), {permanent: true, direction: 'top', className: 'link-label'});
 }
 
 function antPreset(){
