@@ -233,3 +233,9 @@
 
 .link-label{background:rgba(20,24,32,.85);border:0;color:#e6edf3;font-size:10px;padding:1px 4px;box-shadow:none}
 .link-label:before{display:none}
+
+/* persistent neighbour table: muted until an announcement is heard, then accent green */
+.nb-table tr.nbt-muted, .nbt-muted { color: var(--text-muted); }
+.nb-table tr.nbt-muted .nb-name, .nb-table tr.nbt-muted .nb-id { color: var(--text-muted); }
+.nb-table tr.nbt-live, .nbt-live { color: var(--accent); }
+.nb-table tr.nbt-live .nb-name { color: var(--accent); }

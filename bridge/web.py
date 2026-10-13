@@ -11,7 +11,7 @@ from bridge.extensions import app, socketio
 from bridge.util import get_sysinfo, reverse_geocode
 from bridge import meshcore_io as mc
 from bridge import testmode
-from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer
+from bridge import repeater_cli, repeater_test, publicdir, publiclinks, siteplan, antenna, steer, nbtable
 
 
 @app.route("/")
@@ -193,6 +193,17 @@ def api_antenna_aim():
         return dict(extra, ok=True, azimuth_deg=az, applied=bool(d.get("apply", True)),
                     antenna=publiclinks.local_info()["antenna"])
     return _guard(go)
+
+
+@app.route("/api/nbtable")
+def api_nbtable():
+    return _guard(nbtable.view)
+
+
+@app.route("/api/nbtable/sync", methods=["POST"])
+def api_nbtable_sync():
+    """Update the table from the public database now (same job the 24 h background task runs)."""
+    return _guard(lambda: dict(nbtable.sync(manual=True), table=nbtable.view()))
 
 
 @app.route("/api/steer")

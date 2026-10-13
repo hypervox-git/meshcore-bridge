@@ -761,6 +761,8 @@ const API_ENDPOINTS=[
   {method:'POST',path:'/api/send',desc:'Send message. Body: {text, channel}'},
   {method:'POST',path:'/api/neighbors/discover',desc:'Zero-hop neighbour discovery (rate-limited, duty-cycle budgeted). Body: {types:[repeater,room,sensor,client], wait_s}'},
   {method:'POST',path:'/api/neighbors/remote',desc:'A repeater neighbour table. Body: {to, password}'},
+  {method:'GET',path:'/api/nbtable',desc:'Persistent neighbour table (public-database repeaters + heard/discovered state, range, bearing)'},
+  {method:'POST',path:'/api/nbtable/sync',desc:'Update the neighbour table from the public database now'},
   {method:'GET',path:'/api/test/status',desc:'Test-mode state: radio params, duty-cycle usage, running link test'},
   {method:'GET',path:'/api/test/targets',desc:'Contacts available as test targets'},
   {method:'POST',path:'/api/test/link/start',desc:'Start live RSSI/noise-floor test (results over Socket.IO test_sample). Body: {to, password}'},

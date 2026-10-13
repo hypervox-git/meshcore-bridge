@@ -149,6 +149,13 @@ def _on_advert(event):
                                                'longitudeI': int(lon * 1e7)}}})
     _publish_node(nid, name=name, snr=snr, lat=lat and round(float(lat), 6),
                   lon=lon and round(float(lon), 6))
+    try:                                  # persistent neighbour table: only nodes already near us
+        from bridge import nbtable
+        key = _g(p, 'public_key', 'pubkey', 'pubkey_prefix', default='')
+        if key:
+            nbtable.heard(key, 'advert', snr=snr, name=name, strict=True)
+    except Exception as e:
+        print(f'[nbtable] advert: {e}')
 
 
 def _on_telemetry(event):

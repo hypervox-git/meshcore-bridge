@@ -211,6 +211,11 @@ def discover():
     before = _tx_air()
     lines = cli.command('discover.neighbors')
     _last_discover = time.time()
+    try:
+        from bridge import nbtable
+        nbtable.note_discover(_last_discover)      # neighbours that answer now are tagged 'discover'
+    except Exception:
+        pass
     text = ' '.join(lines)
     res = {'ts': _last_discover, 'reply': text[:200], 'supported': 'unknown' not in text.lower()}
     if res['supported']:

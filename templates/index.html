@@ -51,6 +51,7 @@
     <div class="radar-label" id="radar-label">Node map - waiting for data...</div>
     <svg id="radar-svg" viewBox="0 0 380 220" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="radar-hint" id="radar-hint">scroll to zoom, drag to pan</div>
+    <div class="config-actions" style="justify-content:center"><button class="btn btn-send" id="nbt-btn2" onclick="nbSync()" style="font-size:10px;padding:4px 10px">Update neighbour table from public database</button><span class="send-status" id="nbt-status2"></span></div>
   </div>
   <div class="scroll-area">
     <div class="nodes-grid" id="nodes-grid"><div class="empty-state">Waiting for nodes...</div></div>
@@ -80,12 +81,11 @@
   </div>
   <div class="scroll-area">
     <div id="nb-results"><div class="empty-state">Press Discover to ask for a zero-hop reply from nodes in direct radio range.<br>Replies are single short packets, rate-limited and counted against the duty-cycle budget.</div></div>
-    <div class="config-section" style="margin:1rem">
-      <div class="config-title">Repeater neighbour table</div>
-      <div class="config-row"><span class="config-label">Repeater</span><select id="nb-remote-target" class="config-select"></select></div>
-      <div class="config-row"><span class="config-label">Password<div class="config-hint">Repeaters only answer after a login. Leave empty to use REPEATER_PASSWORD from config.py. Not stored.</div></span><input id="nb-remote-pass" type="password" class="config-num" autocomplete="new-password"></div>
-      <div class="config-actions"><button class="btn btn-send" id="nb-remote-btn" onclick="remoteNeighbors()">Fetch</button><span class="send-status" id="nb-remote-status"></span></div>
-      <div id="nb-remote-results"></div>
+    <div class="config-section" style="margin:1rem" id="nbt-card">
+      <div class="config-title">Neighbour table</div>
+      <div class="duty-note">Repeaters near ours, kept across reboots. <span class="nbt-muted">Muted</span> = listed from the public database, never heard. <span class="nbt-live">Green</span> = announcement heard or discovered; the age is that of the data.</div>
+      <div class="config-actions"><button class="btn btn-send" id="nbt-btn" onclick="nbSync()">Update from public database</button><span class="send-status" id="nbt-status"></span></div>
+      <div id="nbt-results"><div class="empty-state">Loading...</div></div>
     </div>
   </div>
 </div>

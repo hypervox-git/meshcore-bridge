@@ -159,6 +159,17 @@ sector, corner reflector). Picking one fills in typical gain / front-to-back / b
 is applied until **Save antenna**. Pattern size is scaled by gain from a **0 dBi reference circle**: tick *show* to draw it on the map and edit its radius (metres, default 400; kept in the browser) - everything updates live. Reach = radius x 10^(dBi/20), so +6 dBi doubles it and a 12 dBi antenna reaches 4x as far. The saved antenna's beam uses the same scale. It is an illustrative scale, not a prediction. The antenna is always assumed vertically polarised, so the pattern shown is the azimuth (H-plane) one. The figures are typical, not measured - edit them to match your antenna. A blank
 beamwidth keeps the Moxon-style wide lobe derived from front-to-back.
 
+### Persistent neighbour table (Neighbours tab)
+
+Replaces the old "Repeater neighbour table" card (the `/api/neighbors/remote` route is still there, only the UI went).
+The table lists repeaters within `NEIGHBOUR_RADIUS_KM` of yours and is saved to `meshcore_neighbours.json`, so it survives a reboot.
+
+- **Filled from the public database**: by the *Update from public database* button (Neighbours tab and under the Dashboard node map), and automatically every `NEIGHBOUR_SYNC_HOURS` (24) by a background task. A manual update re-downloads the list at most once a minute.
+- **Muted** rows are known from the public list but never heard. A row turns **accent green** when its announcement is heard (the repeater's own `neighbors` list, or a flooded advert in Companion mode) or it answers a discover command. It goes muted again `NEIGHBOUR_ACTIVE_HOURS` (24) after it was last heard.
+- **Heard** shows the age of the data (time since the node was last heard, not since the page refreshed) and how it was heard.
+- **Range and bearing** (from your repeater) are recalculated on every table update, and if your position changes.
+- Needs your position: `GATEWAY_LAT`/`GATEWAY_LON`, or `LOCAL_NAME` set to the repeater's name in the public list.
+
 ### Antenna steering (director)
 
 Click a repeater on the map: its popup shows the **boresight bearing from our repeater** (the azimuth that points the

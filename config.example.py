@@ -82,3 +82,10 @@ ANTENNA_FILE             = "meshcore_antenna.json"   # aim saved from the web UI
 STEER_FILE               = "meshcore_steer.json"     # antenna-steering settings saved from the web UI (Test tab); git-ignored
 # Optional defaults for the steering action (the web UI overrides them). Topic default: <MQTT_TOPIC>/antenna/azimuth/set
 STEER_DEFAULTS           = {}     # e.g. {"action": "mqtt", "topic": "antenna/director/azimuth", "payload": "{azimuth_int}", "qos": 1}
+
+# Persistent neighbour table (Neighbours tab) - survives a reboot, filled from the public database
+NEIGHBOUR_TABLE_FILE    = "meshcore_neighbours.json"   # git-ignored
+NEIGHBOUR_RADIUS_KM     = 50      # repeaters within this range of ours are listed
+NEIGHBOUR_TABLE_MAX     = 60      # nearest N
+NEIGHBOUR_SYNC_HOURS    = 24      # background update from the public database
+NEIGHBOUR_ACTIVE_HOURS  = 24      # a row stays green this long after it was last heard / discovered

@@ -227,6 +227,11 @@ async def discover_neighbors(types=None, wait_s=8):
             upd['rssi'] = entry['rssi']
         update_node_db(nid, upd)
     neighbours.sort(key=lambda n: n['rssi'] if n['rssi'] is not None else -999, reverse=True)
+    try:                                   # persistent neighbour table: repeaters that answered
+        from bridge import nbtable
+        nbtable.heard_many([n for n in neighbours if n['type'] == 'repeater'], via='discover')
+    except Exception as e:
+        print(f'[nbtable] discover: {e}')
 
     result = {'ok': True, 'ts': time.time(), 'wait_s': wait_s, 'types': names,
               'neighbours': neighbours, 'duty': gov.snapshot()}

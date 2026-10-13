@@ -26,7 +26,6 @@ function loadTargets(){
     };
     fill('lt-target', t => t.type !== 'client');
     fill('tr-target', () => true);
-    fill('nb-remote-target', t => t.type === 'repeater');
   }).catch(() => {});
 }
 
@@ -87,24 +86,55 @@ function renderNeighbors(d){
     + '<div class="duty-wrap">' + dutyHtml(d.duty) + '</div>';
 }
 
-function remoteNeighbors(){
-  const to = document.getElementById('nb-remote-target').value;
-  if (!to) { setStatus('nb-remote-status', 'Pick a repeater', 'err'); return; }
-  const btn = document.getElementById('nb-remote-btn'); btn.disabled = true;
-  document.getElementById('nb-remote-status').textContent = 'Asking repeater...';
-  post('/api/neighbors/remote', {to, password: document.getElementById('nb-remote-pass').value}).then(d => {
-    btn.disabled = false;
-    document.getElementById('nb-remote-status').textContent = '';
-    const el = document.getElementById('nb-remote-results');
-    if (!d.ok) { el.innerHTML = '<div class="empty-state">' + escHtml(d.error) + '</div>'; return; }
-    el.innerHTML = '<div class="duty-note">' + d.shown + ' of ' + d.total + ' neighbours of ' + escHtml(d.repeater.name) + '</div>'
-      + '<table class="nb-table"><tr><th>Node</th><th>Last heard</th><th>SNR</th></tr>'
-      + d.neighbours.map(n => '<tr><td><div class="nb-name">' + escHtml(aliases[n.id] || n.name || n.id) + '</div><div class="nb-id">' + n.id + '</div></td>'
-        + '<td>' + (n.secs_ago == null ? '-' : n.secs_ago + ' s ago') + '</td>'
-        + '<td style="color:' + snrColor(n.snr) + '">' + fmt(n.snr, ' dB', 1) + '</td></tr>').join('') + '</table>'
-      + '<div class="duty-wrap">' + dutyHtml(d.duty) + '</div>';
-  }).catch(e => { btn.disabled = false; setStatus('nb-remote-status', 'Error: ' + e, 'err'); });
+// ---- persistent neighbour table (survives reboots; filled from the public database) ----
+let nbtData = null, nbtAt = 0;
+function nbtAge(s){
+  if (s < 60) return Math.round(s) + ' s';
+  if (s < 3600) return Math.floor(s / 60) + ' min';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ' + Math.floor(s % 3600 / 60) + ' min';
+  return Math.floor(s / 86400) + ' d ' + Math.floor(s % 86400 / 3600) + ' h';
 }
+function nbtRender(d){
+  if (d) { nbtData = d; nbtAt = Date.now(); }
+  d = nbtData;
+  const el = document.getElementById('nbt-results'); if (!el || !d) return;
+  const el_s = d.now ? (Date.now() - nbtAt) / 1000 : 0;   // seconds since the server stamped the data
+  const rows = d.entries || [];
+  const live = rows.filter(e => e.heard_ts != null && (d.now - e.heard_ts) + el_s <= d.active_s).length;
+  let h = '<div class="duty-note">' + rows.length + ' repeaters, ' + live + ' heard in the last ' + nbtAge(d.active_s)
+    + (d.last_sync_ts ? '. Public database updated ' + nbtAge(d.now - d.last_sync_ts + el_s) + ' ago' : '. Not yet updated from the public database')
+    + (d.our_name ? ' (range/bearing from ' + escHtml(d.our_name) + ')' : '')
+    + (d.last_error ? '. <span style="color:var(--danger,#e55)">' + escHtml(d.last_error) + '</span>' : '') + '</div>';
+  if (!rows.length) { el.innerHTML = h + '<div class="empty-state">Press "Update from public database" to list the repeaters near this one.</div>'; return; }
+  h += '<table class="nb-table"><tr><th>Node</th><th>Range</th><th>Bearing</th><th>Heard</th><th>SNR</th></tr>';
+  h += rows.map(e => {
+    const age = e.heard_ts != null ? (d.now - e.heard_ts) + el_s : null;
+    const on = age != null && age <= d.active_s;
+    const via = e.heard_via ? ' (' + escHtml(e.heard_via) + ')' : '';
+    return '<tr class="' + (on ? 'nbt-live' : 'nbt-muted') + '"><td><div class="nb-name">' + escHtml(aliases[e.key] || e.name || e.key.slice(0, 8))
+      + '</div><div class="nb-id">' + escHtml(e.key.slice(0, 8)) + '</div></td>'
+      + '<td>' + (e.range_km == null ? '-' : e.range_km.toFixed(1) + ' km') + '</td>'
+      + '<td>' + (e.bearing_deg == null ? '-' : Math.round(e.bearing_deg) + '&deg;') + '</td>'
+      + '<td>' + (age == null ? 'never' : nbtAge(age) + ' ago' + via) + '</td>'
+      + '<td>' + (e.snr == null ? '-' : fmt(e.snr, ' dB', 1)) + '</td></tr>';
+  }).join('') + '</table>';
+  el.innerHTML = h;
+}
+function nbtLoad(){ return fetch('/api/nbtable').then(r => r.json()).then(d => { if (d.ok) nbtRender(d); }).catch(() => {}); }
+function nbSync(){
+  const btns = ['nbt-btn', 'nbt-btn2'].map(i => document.getElementById(i)).filter(Boolean);
+  const msg = t => ['nbt-status', 'nbt-status2'].forEach(i => { const e = document.getElementById(i); if (e) e.textContent = t; });
+  btns.forEach(b => b.disabled = true); msg('Updating...');
+  return post('/api/nbtable/sync', {}).then(d => {
+    btns.forEach(b => b.disabled = false);
+    if (!d.ok) { msg('Failed: ' + d.error); return; }
+    msg('Done: ' + d.added + ' new, ' + d.count + ' listed');
+    nbtRender(d.table);
+  }).catch(e => { btns.forEach(b => b.disabled = false); msg('Error: ' + e); });
+}
+socket.on('nbtable', nbtRender);
+nbtLoad();
+setInterval(() => nbtRender(), 30000);        // keep the ages moving
 
 function jumpToTest(id){
   showPage('test');
