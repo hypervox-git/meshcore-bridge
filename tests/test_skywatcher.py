@@ -155,3 +155,60 @@ def test_mount_routes(mount):
     assert c.post('/api/mount/nudge', json={'delta': 500}).get_json()['ok'] is False
     assert c.post('/api/mount/settings', json={'host': 'bad host'}).get_json()['ok'] is False
     assert c.post('/api/mount/stop').get_json()['ok']
+
+
+def test_position_survives_bridge_restart(mount):
+    mount.pos = 777
+    sw.calibrate(110)
+    sw.goto(150)
+    sw.status()                                           # a poll records where it is
+    saved = sw._saved()
+    assert saved['last_pos'] == mount.pos and saved['last_bearing'] == 150.0 and saved['ref_pos'] == 777
+    sw._cpr_cache.clear()                                 # "restart": all in-memory state gone, only the file remains
+    st = sw.status()
+    assert st['calibrated'] and st['bearing'] == 150.0 and not st.get('power_cycled')
+
+
+def test_power_cycle_detected_then_restored(mount):
+    mount.pos = 5000
+    sw.calibrate(110)
+    sw.goto(160)
+    sw.status()
+    mount.pos = 0                                         # mount switched off and on: count back at zero
+    st = sw.status()
+    assert st['power_cycled'] and not st['calibrated'] and st.get('bearing') is None
+    with pytest.raises(sw.MountError, match='power-cycled'):
+        sw.goto(120)
+    r = sw.restore()
+    assert 'restored' in r['detail']
+    st = sw.status()
+    assert not st.get('power_cycled') and st['bearing'] == 160.0       # assumed unmoved: same bearing, new count
+    sw.goto(170)
+    assert sw.status()['bearing'] == 170.0
+
+
+def test_model_aim_follows_mount_and_persists(mount):
+    sw.calibrate(110)
+    assert sw.sync_model() is True and antenna.override()['azimuth_deg'] == 110.0
+    assert sw.sync_model() is False                                    # already equal: no rewrite
+    sw.nudge(25)                                                       # not via the steer action
+    assert sw.sync_model() is True and antenna.override()['azimuth_deg'] == 135.0
+
+
+def test_restore_without_history(mount):
+    with pytest.raises(sw.MountError, match='no previous'):
+        sw.restore()
+
+
+def test_restore_route_and_sync_in_routes(mount):
+    from bridge import web  # noqa: F401
+    from bridge.extensions import app
+    c = app.test_client()
+    c.post('/api/mount/calibrate', json={'settings': {'ref_bearing': 90}})
+    assert antenna.override()['azimuth_deg'] == 90.0                   # route result also synced the model
+    c.post('/api/mount/nudge', json={'delta': 15})
+    assert c.get('/api/mount').get_json()['bearing'] == 105.0 and antenna.override()['azimuth_deg'] == 105.0
+    mount.pos = 0
+    d = c.get('/api/mount').get_json()
+    assert d['power_cycled'] and c.post('/api/mount/nudge', json={'delta': 5}).get_json()['ok'] is False
+    assert c.post('/api/mount/restore').get_json()['ok']

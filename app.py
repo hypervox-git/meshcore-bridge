@@ -2,7 +2,7 @@
 # in a dedicated thread).
 from config import WEB_PORT
 import config
-from bridge import state, mqtt_bridge, meshcore_io, repeater_cli, repeater_test, publicdir, nbtable
+from bridge import state, mqtt_bridge, meshcore_io, repeater_cli, repeater_test, publicdir, nbtable, skywatcher
 from bridge import web  # noqa: F401 — importing registers the Flask routes
 from bridge.extensions import app, socketio
 
@@ -11,6 +11,7 @@ def main():
     state.load_all()
     mqtt_bridge.start()
     publicdir.start()                 # public node directory (positions of known repeaters)
+    skywatcher.start()                # keeps the modelled antenna aim equal to the mount's real bearing
     nbtable.start()                   # persistent neighbour table (+ 24 h public-database sync)
     if getattr(config, 'SERIAL_MODE', 'companion') == 'repeater':
         repeater_test.install_exit_hooks()

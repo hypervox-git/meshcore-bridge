@@ -765,6 +765,7 @@ const API_ENDPOINTS=[
   {method:'POST',path:'/api/mount/settings',desc:'Save mount settings. Body: {host, port, ref_bearing, travel_deg, brake_deg, invert}'},
   {method:'POST',path:'/api/mount/calibrate',desc:'Record the bearing the antenna points at now. Body: {settings?}'},
   {method:'POST',path:'/api/mount/nudge',desc:'Turn the antenna by a few degrees. Body: {delta}'},
+  {method:'POST',path:'/api/mount/restore',desc:'After a mount power cycle: re-pair it with its last known bearing'},
   {method:'POST',path:'/api/mount/stop',desc:'Stop the mount'},
   {method:'GET',path:'/api/nbtable',desc:'Persistent neighbour table (public-database repeaters + heard/discovered state, range, bearing)'},
   {method:'POST',path:'/api/nbtable/sync',desc:'Update the neighbour table from the public database now'},

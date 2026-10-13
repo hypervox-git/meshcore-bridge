@@ -139,7 +139,7 @@
       <div class="config-actions"><button class="btn btn-send" onclick="mountSave()">Save</button>
         <button class="btn btn-share" onclick="mountCalibrate()">Set current pointing</button>
         <button class="btn" onclick="mountNudge(-10)">&minus;10&deg;</button><button class="btn" onclick="mountNudge(10)">+10&deg;</button>
-        <button class="btn" onclick="mountStop()">Stop</button><button class="btn" onclick="mountLoad(true)">Refresh</button>
+        <button class="btn" onclick="mountStop()">Stop</button><button class="btn" id="mt-restore" onclick="mountRestore()" style="display:none">Restore last pointing</button><button class="btn" onclick="mountLoad(true)">Refresh</button>
         <span class="send-status" id="mt-status"></span></div>
       <div class="config-hint" id="mt-info"></div>
     </div>

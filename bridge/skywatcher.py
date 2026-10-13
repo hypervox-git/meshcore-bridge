@@ -12,7 +12,12 @@
 # After that, bearing = ref_bearing +/- (count - ref_count) * 360 / counts-per-rev. The travel limit stops the
 # coax winding round the mast: a target is always reached the way that stays within +/- travel_deg of the
 # reference bearing, never by spinning through the limit.
-# Settings live in MOUNT_FILE (git-ignored) so the web page can change them without a restart.
+# Settings live in MOUNT_FILE (git-ignored) so the web page can change them without a restart. The file also
+# remembers the last position read from the mount (last_pos / last_bearing), so:
+#   * the bridge restarting loses nothing (the mount keeps its own count while powered);
+#   * a mount POWER CYCLE is detected (count back at exactly 0 though it was somewhere else) and moves are
+#     refused until you press Set current pointing or Restore last pointing (antenna not moved while off);
+#   * the modelled antenna aim (map beam / ghosts, meshcore_antenna.json) follows the real bearing (sync_model).
 # NOT verified on hardware by the author: check the direction ('Reverse direction') with the +/- 10 buttons.
 import json
 import math
@@ -47,10 +52,14 @@ class MountError(RuntimeError):
     pass
 
 
+CYCLED = ('the mount seems to have been power-cycled (its position count was reset). Press "Restore last pointing" if the '
+          'antenna has not been moved since, or point it at a known bearing and press "Set current pointing"')
+
+
 # ---- settings ---------------------------------------------------------------------------
 
 DEFAULTS = {'host': '', 'port': 11880, 'ref_bearing': 0.0, 'ref_pos': None, 'travel_deg': 180.0,
-            'invert': False, 'brake_deg': 5.0}
+            'invert': False, 'brake_deg': 5.0, 'last_pos': None, 'last_bearing': None}
 _HOST = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
 
 
@@ -107,6 +116,23 @@ def _write(cur):
     with open(tmp, 'w') as f:
         json.dump(cur, f)
     os.replace(tmp, _file())
+
+
+def _remember(pos, bearing):
+    """Persist the last position seen (only when it changed, so the file is not rewritten on every poll)."""
+    cur = _saved()
+    if cur.get('last_pos') == pos:
+        return
+    cur.update(last_pos=pos, last_bearing=round(bearing % 360.0, 1))
+    try:
+        _write(cur)
+    except OSError as e:
+        print(f'[mount] could not save position: {e}')
+
+
+def power_cycled(s, pos):
+    """True if the count is back at the power-on zero although the mount was last somewhere else."""
+    return pos == 0 and s.get('last_pos') not in (None, 0)
 
 
 def save_settings(update):
@@ -234,6 +260,8 @@ def goto(az, s=None):
         _calibrated(s)
         cpr = _cpr(s)
         pos = _pos(s)
+        if power_cycled(s, pos):
+            raise MountError(CYCLED)
         cur = bearing_of(s, pos, cpr)
         tgt = choose_target(s, float(az), cur)
         delta_deg = tgt - cur
@@ -282,12 +310,21 @@ def calibrate(bearing=None, s=None):
         _cpr(s)
         pos = _pos(s)
     cur = _saved()
-    cur.update(ref_bearing=s['ref_bearing'], ref_pos=pos)
+    cur.update(ref_bearing=s['ref_bearing'], ref_pos=pos, last_pos=pos, last_bearing=round(s['ref_bearing'], 1))
     _write(cur)
     return {'detail': f"mount pointing set to {s['ref_bearing']:.1f}° (motor count {pos})"}
 
 
-def status(s=None):
+def restore(s=None):
+    """After a mount power cycle: assume the antenna is still where it was last seen and re-pair the new count with it."""
+    s = s or settings()
+    if s.get('last_bearing') is None:
+        raise MountError('no previous pointing is stored - point the antenna at a known bearing and press "Set current pointing"')
+    r = calibrate(s['last_bearing'], s)
+    return {'detail': 'restored: ' + r['detail']}
+
+
+def status(s=None, remember=True):
     """Settings plus a live reading (never raises): reachable, actual bearing, moving."""
     s = s or settings()
     out = {'ok': True, 'settings': s, 'calibrated': s.get('ref_pos') is not None, 'reachable': False, 'last': _last}
@@ -299,10 +336,42 @@ def status(s=None):
             cpr = _cpr(s)
             pos = _pos(s)
             out.update(reachable=True, cpr=cpr, count=pos, moving=_running(s))
-            if s.get('ref_pos') is not None:
+            if power_cycled(s, pos):
+                out.update(power_cycled=True, calibrated=False, message=CYCLED)
+            elif s.get('ref_pos') is not None:
                 b = bearing_of(s, pos, cpr)
                 out.update(bearing=round(b % 360, 1), unwrapped=round(b, 1),
                            travel_left=round(s['travel_deg'] - abs(b - s['ref_bearing']), 1))
+                if remember:
+                    _remember(pos, b)
     except MountError as e:
         out['message'] = str(e)
     return out
+
+
+def sync_model(st=None):
+    """Make the modelled antenna aim (map beam, ghosts - saved in meshcore_antenna.json, so it survives restarts)
+    equal the bearing actually read from the mount. Returns True if it changed."""
+    from bridge import antenna
+    st = st or status()
+    b = st.get('bearing')
+    if b is None:
+        return False
+    cur = (antenna.override() or {}).get('azimuth_deg')
+    if cur is not None and abs((b - cur + 180.0) % 360.0 - 180.0) < 0.5:
+        return False
+    antenna.save({'azimuth_deg': b}, 'read from the Sky-Watcher mount')
+    return True
+
+
+def start():
+    """Background task: every 30 s (while a mount address is set) keep the modelled aim equal to the real bearing."""
+    def _loop():
+        while True:
+            try:
+                if settings()['host']:
+                    sync_model()
+            except Exception as e:
+                print(f'[mount] {e}')
+            time.sleep(30)
+    threading.Thread(target=_loop, daemon=True, name='mount-sync').start()

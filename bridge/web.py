@@ -208,7 +208,11 @@ def api_nbtable_sync():
 
 @app.route("/api/mount")
 def api_mount():
-    return _guard(skywatcher.status)
+    def go():
+        st = skywatcher.status()
+        skywatcher.sync_model(st)                    # the map beam / ghosts follow the real bearing
+        return st
+    return _guard(go)
 
 
 @app.route("/api/mount/settings", methods=["POST"])
@@ -222,7 +226,9 @@ def _mount_call(fn):
         res = fn()
     except skywatcher.MountError as e:
         return {"ok": False, "error": str(e)}
-    return dict(skywatcher.status(), detail=res.get("detail"))
+    st = skywatcher.status()
+    skywatcher.sync_model(st)
+    return dict(st, detail=res.get("detail"))
 
 
 @app.route("/api/mount/calibrate", methods=["POST"])
@@ -235,6 +241,11 @@ def api_mount_calibrate():
             skywatcher.save_settings(d["settings"])
         return skywatcher.calibrate(d.get("bearing"))
     return _guard(lambda: _mount_call(go))
+
+
+@app.route("/api/mount/restore", methods=["POST"])
+def api_mount_restore():
+    return _guard(lambda: _mount_call(skywatcher.restore))
 
 
 @app.route("/api/mount/nudge", methods=["POST"])

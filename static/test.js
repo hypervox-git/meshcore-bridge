@@ -833,6 +833,7 @@ function steerSend(az, target){
   if (act === 'skywatcher' && !confirm('Turn the antenna with the Sky-Watcher mount?\n\nAzimuth ' + az + '\u00b0 true' + (target ? ' (towards ' + target + ')' : '') + '\nCheck nothing can snag the coax or mast.')) return;
   if (act === 'mqtt' && !confirm('Send a steering command to the antenna director?\n\nAzimuth ' + az + '\u00b0 true' + (target ? ' (towards ' + target + ')' : '') + '\nMQTT topic: ' + f.topic + '\nPayload: ' + f.payload)) return;
   const show = (m, ok) => { setStatus('st-status', m, ok ? 'ok' : 'err'); const e = document.getElementById('steer-msg'); if (e) e.textContent = m; };
+  if (act === 'skywatcher') window.mountBoost = Date.now() + 25000;
   return post('/api/steer', {azimuth: az, target: target || null, settings: f}).then(d => {
     if (!d.ok){ show(d.error, false); steerLoad(true); return; }
     show(d.detail, true); if (d.antenna) antFill(d.antenna); steerLoad(true);
@@ -867,10 +868,29 @@ function mountFill(d, keepForm){
   else t = 'Mount reachable' + (d.moving ? ' (moving)' : '') + '. ' + (d.calibrated
     ? 'Pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.'
     : 'Not calibrated yet: point the antenna at the bearing above and press Set current pointing.');
+  if (d.power_cycled) t = 'Mount position was reset (power-cycled?). If the antenna has not been moved since, press Restore last pointing' + (s.last_bearing != null ? ' (' + s.last_bearing + '\u00b0)' : '') + '; otherwise point it at a known bearing and press Set current pointing.';
   v('mt-info').textContent = t;
+  const rb = v('mt-restore'); if (rb) rb.style.display = d.power_cycled ? '' : 'none';
+  window.mountCfg = {host: s.host, calibrated: !!d.calibrated, moving: !!d.moving};
+  mountFollow(d);
+}
+// The ghost / beam on the map follows where the antenna REALLY points (read back from the mount).
+function mountFollow(d){
+  if (d.bearing == null) return;
+  const changed = window.mountBearing !== d.bearing;
+  window.mountBearing = d.bearing;
+  const az = document.getElementById('ant-az');
+  if (az && document.activeElement !== az) az.value = d.bearing;       // preview ghost (antenna type dropdown) uses this field
+  if (!changed) return;
+  const a = window.lastSim && window.lastSim.local && window.lastSim.local.antenna;
+  if (a) { a.azimuth_deg = d.bearing; try { drawSim(window.lastSim); } catch (e) {} }   // saved beam; drawSim also redraws the ghosts
+  else if (typeof antGhost === 'function') antGhost();
+  const src = document.getElementById('ant-src');
+  if (src && a && a.directional) src.textContent = 'Current: ' + a.type + ' ' + a.gain_dbi + ' dBi aimed at ' + d.bearing + '\u00b0 true (read from the mount), F/B ' + a.front_back_db + ' dB';
 }
 function mountLoad(keepForm){ return fetch('/api/mount').then(r => r.json()).then(d => { if (d.ok) mountFill(d, keepForm); }).catch(() => {}); }
 function mountCall(url, body, okMsg){
+  window.mountBoost = Date.now() + 25000;                 // poll fast while the mount turns
   setStatus('mt-status', 'Working...', 'ok');
   return post(url, body).then(d => {
     if (!d.ok) { setStatus('mt-status', d.error, 'err'); return; }
@@ -886,4 +906,16 @@ function mountCalibrate(){
 }
 function mountNudge(d){ return mountCall('/api/mount/nudge', {delta: d}); }
 function mountStop(){ return mountCall('/api/mount/stop', {}); }
+function mountRestore(){
+  if (!confirm('Assume the antenna has NOT moved since the mount was switched off, and re-pair it with its last bearing?')) return;
+  return mountCall('/api/mount/restore', {});
+}
 mountLoad(false);
+(function mountPollLoop(){
+  const tick = () => {
+    const cfg = window.mountCfg, fast = (cfg && cfg.moving) || Date.now() < (window.mountBoost || 0);
+    const go = !document.hidden && cfg && cfg.host && cfg.calibrated;
+    (go ? mountLoad(true) : Promise.resolve()).then(() => setTimeout(tick, fast ? 1000 : 8000));
+  };
+  setTimeout(tick, 3000);
+})();

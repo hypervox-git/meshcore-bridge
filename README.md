@@ -180,6 +180,8 @@ Test tab -> **Sky-Watcher mount**. Choose **Sky-Watcher** as the action in *Ante
 4. Press **+10 / -10**. If the antenna turns the wrong way, tick **Reverse direction**.
 5. Travel limit (default +/-180 from the initial bearing) keeps the coax from winding round the mast: a target is always reached the way that stays inside the limit, and a move outside it is refused. **Stop** halts the mount.
 
+**Restarts and power cycles:** the last position read from the mount is saved (`meshcore_mount.json`), and the modelled aim (`meshcore_antenna.json`) is kept equal to the real bearing, also by a 30 s background task, so a bridge restart loses nothing. If the *mount* is switched off and on, its count resets: the card then says so and refuses moves until you press **Restore last pointing** (antenna not moved while it was off) or **Set current pointing**. While the mount turns, the blue beam and the antenna-type ghost on the Map follow its real bearing.
+
 Only the azimuth axis is used; keep the altitude axis level. The bridge reads the real position back, so the card shows where the antenna actually points. Protocol: Sky-Watcher motor-controller commands over UDP (`bridge/skywatcher.py`). It has been tested against an emulator only, so try small nudges first; if it overshoots, raise *Brake distance*.
 
 ### Antenna steering (director)
