@@ -108,7 +108,7 @@ function nbtRender(d){
     + (d.our_name ? ' (range/bearing from ' + escHtml(d.our_name) + ')' : '')
     + (d.last_error ? '. <span style="color:var(--danger,#e55)">' + escHtml(d.last_error) + '</span>' : '') + '</div>';
   if (!rows.length) { el.innerHTML = h + '<div class="empty-state">Press "Update from public database" to list the repeaters near this one.</div>'; return; }
-  h += '<table class="nb-table"><tr><th>Node</th><th>Range</th><th>Bearing</th><th>Heard</th><th>SNR</th></tr>';
+  h += '<table class="nb-table"><tr><th>Node</th><th>Range</th><th>Bearing</th><th>Heard</th><th>RSSI</th><th>SNR</th></tr>';
   h += rows.map(e => {
     const age = e.heard_ts != null ? (d.now - e.heard_ts) + el_s : null;
     const on = age != null && age <= d.active_s;
@@ -118,6 +118,7 @@ function nbtRender(d){
       + '<td>' + (e.range_km == null ? '-' : e.range_km.toFixed(1) + ' km') + '</td>'
       + '<td>' + (e.bearing_deg == null ? '-' : Math.round(e.bearing_deg) + '&deg;') + '</td>'
       + '<td>' + (age == null ? 'never' : nbtAge(age) + ' ago' + via) + '</td>'
+      + '<td>' + (e.rssi == null ? '-' : fmt(e.rssi, ' dBm', 0)) + '</td>'
       + '<td>' + (e.snr == null ? '-' : fmt(e.snr, ' dB', 1)) + '</td></tr>';
   }).join('') + '</table>';
   el.innerHTML = h;
@@ -479,11 +480,7 @@ function repNeighbours(rows, connected){
   const rt = (window.rtLast && window.rtLast.neighbours) || [];
   const byId = {}; rt.forEach(n => byId[n.id] = n);
   document.getElementById('nb-count').textContent = (rows ? rows.length : 0) + ' found';
-  if (!rows || !rows.length){
-    el.innerHTML = '<div class="empty-state">' + (connected === false ? 'Repeater not connected.' : 'The repeater has not heard any neighbour yet.')
-      + '<br>Press Discover to ask neighbours to answer (if the firmware supports <code>discover.neighbors</code>), otherwise neighbours appear when their advert is heard.</div>';
-    return;
-  }
+  if (!rows || !rows.length){ el.innerHTML = ''; return; }
   el.innerHTML = '<table class="nb-table"><tr><th>Node</th><th>SNR</th><th>RSSI*</th><th>Path loss (est.)</th><th>Last heard</th><th>Position</th></tr>'
     + rows.map(r => { const t = byId[r.id] || {};
       return '<tr><td><div class="nb-name">' + escHtml(r.name || 'unknown node') + '</div><div class="nb-id">' + escHtml(r.id) + '</div></td>'

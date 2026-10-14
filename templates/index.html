@@ -76,6 +76,7 @@
 <div class="page" id="page-neighbors">
   <div class="log-toolbar" style="flex-wrap:wrap">
     <button class="btn btn-send" id="nb-btn" onclick="discoverNeighbors()" style="font-size:10px;padding:4px 10px">Discover</button>
+    <button class="btn btn-send" id="nbt-btn" onclick="nbSync()" style="font-size:10px;padding:4px 10px">Update from public database</button><span class="send-status" id="nbt-status"></span>
     <label class="tracker-chip"><input type="checkbox" class="nb-type" value="repeater" checked>Repeaters</label>
     <label class="tracker-chip"><input type="checkbox" class="nb-type" value="room" checked>Rooms</label>
     <label class="tracker-chip"><input type="checkbox" class="nb-type" value="sensor" checked>Sensors</label>
@@ -84,11 +85,10 @@
     <span class="badge" id="nb-count">0 found</span>
   </div>
   <div class="scroll-area">
-    <div id="nb-results"><div class="empty-state">Press Discover to ask for a zero-hop reply from nodes in direct radio range.<br>Replies are single short packets, rate-limited and counted against the duty-cycle budget.</div></div>
+    <div id="nb-results"></div>
     <div class="config-section" style="margin:1rem" id="nbt-card">
       <div class="config-title">Neighbour table</div>
       <div class="duty-note">Repeaters near ours, kept across reboots. <span class="nbt-muted">Muted</span> = listed from the public database, never heard. <span class="nbt-live">Green</span> = announcement heard or discovered; the age is that of the data.</div>
-      <div class="config-actions"><button class="btn btn-send" id="nbt-btn" onclick="nbSync()">Update from public database</button><span class="send-status" id="nbt-status"></span></div>
       <div id="nbt-results"><div class="empty-state">Loading...</div></div>
     </div>
   </div>
