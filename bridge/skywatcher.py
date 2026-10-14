@@ -47,6 +47,41 @@ _lock = threading.RLock()
 _cpr_cache = {}
 _last = None
 
+# ---- link watch: log each drop-out/recovery with a timestamp, poll fast while the mount is down ----
+UP_POLL_S = 30                         # normal poll interval
+DOWN_POLL_S = 5                        # poll interval while the mount is unreachable
+_link = {'up': None, 'down_at': None, 'since': None, 'outages': []}
+
+
+def _note_link(up, msg=''):
+    """Record reachable/unreachable transitions (called from status(), so UI refreshes count too)."""
+    now = time.time()
+    with _lock:
+        prev = _link['up']
+        if prev is up:
+            return
+        _link['up'], _link['since'] = up, now
+        stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))
+        if not up:
+            _link['down_at'] = now
+            print(f'[mount] {stamp} LOST: {msg}')
+            return
+        d = _link['down_at']
+        if prev is False and d:
+            secs = round(now - d)
+            _link['outages'].append({'start': d, 'end': now, 'secs': secs})
+            del _link['outages'][:-20]
+            print(f'[mount] {stamp} RECOVERED after {secs} s')
+        else:
+            print(f'[mount] {stamp} reachable')
+        _link['down_at'] = None
+
+
+def link_view():
+    with _lock:
+        return {'up': _link['up'], 'since': _link['since'], 'down_at': _link['down_at'],
+                'outages': list(_link['outages'])}
+
 
 class MountError(RuntimeError):
     pass
@@ -346,6 +381,8 @@ def status(s=None, remember=True):
                     _remember(pos, b)
     except MountError as e:
         out['message'] = str(e)
+    _note_link(out['reachable'], out.get('message', ''))
+    out['link'] = link_view()
     return out
 
 
@@ -365,13 +402,17 @@ def sync_model(st=None):
 
 
 def start():
-    """Background task: every 30 s (while a mount address is set) keep the modelled aim equal to the real bearing."""
+    """Background task: keep the modelled aim equal to the real bearing (every 30 s, or every 5 s while the
+    mount is unreachable so a recovery is noticed quickly). Drop-outs and recoveries are logged by status()."""
     def _loop():
         while True:
+            wait = UP_POLL_S
             try:
                 if settings()['host']:
                     sync_model()
+                    if _link['up'] is False:
+                        wait = DOWN_POLL_S
             except Exception as e:
                 print(f'[mount] {e}')
-            time.sleep(30)
+            time.sleep(wait)
     threading.Thread(target=_loop, daemon=True, name='mount-sync').start()

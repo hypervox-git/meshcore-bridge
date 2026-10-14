@@ -879,6 +879,13 @@ function mountFill(d, keepForm){
     ? 'Pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.'
     : 'Not calibrated yet: point the antenna at the bearing above and press Set current pointing.');
   if (d.power_cycled) t = 'Mount position was reset (power-cycled?). If the antenna has not been moved since, press Restore last pointing' + (s.last_bearing != null ? ' (' + s.last_bearing + '\u00b0)' : '') + '; otherwise point it at a known bearing and press Set current pointing.';
+  const lk = d.link;
+  if (s.host && lk && lk.outages && lk.outages.length){
+    const o = lk.outages[lk.outages.length - 1];
+    t += ' Last drop-out ' + new Date(o.start * 1000).toLocaleString('en-GB', {hour12: false}) + ' for ' + o.secs + ' s (' + lk.outages.length + ' since the bridge started).';
+  } else if (s.host && lk && lk.up === false && lk.down_at){
+    t += ' Down since ' + new Date(lk.down_at * 1000).toLocaleTimeString('en-GB', {hour12: false}) + '.';
+  }
   v('mt-info').textContent = t;
   const rb = v('mt-restore'); if (rb) rb.style.display = d.power_cycled ? '' : 'none';
   window.mountCfg = {host: s.host, calibrated: !!d.calibrated, moving: !!d.moving};
