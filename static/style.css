@@ -204,10 +204,21 @@
 .nb-table tr.nbt-live, .nbt-live { color: var(--accent); }
 .nb-table tr.nbt-live .nb-name { color: var(--accent); }
 
-/* Test page quick-jump bar */
-.jump-bar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:.4rem;padding:.4rem 0 .6rem;margin-bottom:.4rem;background:var(--bg,#0b0e11);border-bottom:1px solid var(--border)}
-.jump-bar a{font-size:10px;letter-spacing:.06em;color:var(--text-muted);text-decoration:none;border:1px solid var(--border);border-radius:3px;padding:3px 9px}
-.jump-bar a:hover{color:var(--accent);border-color:var(--accent)}
+/* Test page: numbered sub-tabs, one step at a time, cards side by side on wide screens */
+.subtabs{display:flex;gap:.5rem;margin-bottom:.8rem;border-bottom:1px solid var(--border);padding-bottom:.6rem}
+.subtab{background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text-muted);font-family:inherit;font-size:11px;letter-spacing:.06em;padding:6px 14px;cursor:pointer}
+.subtab span{color:var(--accent);margin-right:6px}
+.subtab:hover{color:var(--text)}
+.subtab.active{color:var(--accent);border-color:var(--accent)}
+.test-group{display:none}
+.test-group.active{display:block}
+.test-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.8rem;align-items:start}
+@media(min-width:1100px){.test-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.test-grid .config-section{margin-bottom:0;padding:.8rem 1rem}
+.test-grid .config-row{padding:.25rem 0}
+.test-grid .tm-chart{height:150px}
+.test-grid #rep-card{grid-column:1/-1}
+.test-group .warning-box{margin-bottom:.8rem}
 
 /* Mount slewing banner over the map */
 #page-map{position:relative}

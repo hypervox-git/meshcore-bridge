@@ -140,7 +140,7 @@ nbtLoad();
 setInterval(() => nbtRender(), 30000);        // keep the ages moving
 
 function jumpToTest(id){
-  showPage('test');
+  showPage('test'); testTab('run');
   setTimeout(() => {
     const sel = document.getElementById('lt-target'); if (sel && Array.from(sel.options).some(o => o.value === id)) sel.value = id;
     const tr = document.getElementById('tr-target'); if (tr) tr.value = id;
@@ -992,17 +992,15 @@ document.getElementById('mq-filter').addEventListener('input', e => { e.target.d
   if (mqState) document.getElementById('mq-sub').disabled = !!(mqState.subscribed && mqState.active_filter === e.target.value.trim()); });
 mqLoad();
 
-// ---- Test page: quick-jump bar (the page is a long stack of cards) ----
-const TEST_CARDS = [['ant-card', 'Antenna'], ['steer-card', 'Steering'], ['mount-card', 'Mount'], ['plan-card', 'Planner'],
-                    ['rep-card', 'Repeater test'], ['lt-card', 'Link test'], ['tr-card', 'Traceroute']];
-function testNav(){
-  const page = document.querySelector('#page-test .config-page'); if (!page) return;
-  let bar = document.getElementById('test-jump');
-  if (!bar){ bar = document.createElement('div'); bar.id = 'test-jump'; bar.className = 'jump-bar'; page.insertBefore(bar, page.firstChild); }
-  bar.innerHTML = TEST_CARDS.filter(c => { const e = document.getElementById(c[0]); return e && e.style.display !== 'none'; })
-    .map(c => '<a href="#" onclick="testJump(\'' + c[0] + '\');return false">' + c[1] + '</a>').join('');
+// ---- Test page: three steps (Antenna & aim -> Steering & mount -> Run tests), one shown at a time ----
+function testTab(name){
+  if (!document.getElementById('tg-' + name)) name = 'antenna';
+  document.querySelectorAll('#page-test .test-group').forEach(g => g.classList.toggle('active', g.id === 'tg-' + name));
+  document.querySelectorAll('#test-tabs .subtab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  try { localStorage.setItem('testTab', name); } catch (e) {}
+  window.dispatchEvent(new Event('resize'));          // let charts size themselves once visible
 }
-function testJump(id){ const e = document.getElementById(id); if (e) e.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+function testNav(){ let t = null; try { t = localStorage.getItem('testTab'); } catch (e) {} testTab(t || 'antenna'); }
 
 // ---- base-station picker on the Map page (every repeater within ALWAYS km is listed, nearest first) ----
 function simPickFill(d){
