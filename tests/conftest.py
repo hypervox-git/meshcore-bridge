@@ -38,3 +38,11 @@ def _isolate_runtime_files(tmp_path, monkeypatch):
     nbtable._meta.clear()
     mqtt_monitor._buf.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _mount_guard_inline(monkeypatch):
+    """The mount move guard runs inline and fast in tests (deterministic, no stray thread touching the fake mount)."""
+    from bridge import skywatcher
+    monkeypatch.setattr(skywatcher, 'SUPERVISE_ASYNC', False)
+    monkeypatch.setattr(skywatcher, 'SUPERVISE_S', 0.001)

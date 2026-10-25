@@ -13,6 +13,7 @@ class FakeMount:
     """Minimal motor-controller emulator: instant goto, records every command."""
     def __init__(self):
         self.pos, self.log, self.err = 0, [], None
+        self.script, self.script_on_go = [], []          # scripted positions returned by :j1 after :J1 (move-guard tests)
         self.powered, self.inited = True, True          # unpowered: no reply at all; uninitialised: refuses to move
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(('127.0.0.1', 0))
@@ -25,14 +26,19 @@ class FakeMount:
         if self.err == c:
             return '!0'
         if c == 'a': return '=' + sw.hex24(CPR)
-        if c == 'j': return '=' + sw.hex24(self.pos + sw.HOME)
-        if c == 'f': return '=10' + ('1' if self.inited else '0')
+        if c == 'j':
+            if self.script: self.pos = self.script.pop(0)
+            return '=' + sw.hex24(self.pos + sw.HOME)
+        if c == 'L': self.script = []; return '='
+        if c == 'f': return '=1' + ('1' if self.script else '0') + ('1' if self.inited else '0')
         if c == 'F': self.inited = True; return '='
         if c == 'G': self.dir = int(line[4]); return '='
         if c == 'H': self.inc = sw.parse24(line[3:9]); return '='
         if c == 'J':
             if not self.inited: return '!4'
-            self.pos += -self.inc if self.dir else self.inc; return '='
+            if self.script_on_go: self.script = list(self.script_on_go)
+            else: self.pos += -self.inc if self.dir else self.inc
+            return '='
         return '='
 
     def run(self):
@@ -235,3 +241,39 @@ def test_route_does_not_persist_aim_while_moving(mount, monkeypatch):
     monkeypatch.setattr(sw, '_running', lambda s: False)
     c.get('/api/mount')
     assert saved == [1]
+
+
+def _deg(d):                                    # fake mount: counts for d degrees (CPR = 3.6M -> 10000 per degree)
+    return int(d * CPR / 360)
+
+
+def test_guard_stops_at_travel_limit(mount):
+    mount.pos = 0
+    sw.save_settings({'travel_deg': 60})                                  # allowed bearings 50..170
+    sw.calibrate(110)
+    mount.script_on_go = [_deg(20), _deg(45), _deg(58.0), _deg(60.8), _deg(63)]      # 170.8 is past 170 + 0.5
+    sw.goto(168)                                                           # legal target, but the mount runs on
+    st = sw.status()
+    assert ':L1' in mount.log[-6:] and st['fault'] and 'travel limit' in st['fault']['msg']
+    assert st['bearing'] == 110 + 60.8 and not mount.script               # stopped at the reading that tripped it
+
+
+def test_guard_stops_hunting(mount):
+    sw.calibrate(110)
+    mount.script_on_go = [_deg(8), _deg(16), _deg(20.4), _deg(21.0), _deg(19.8), _deg(21.5)]
+    sw.goto(130)                                                           # +20 deg
+    f = sw.status()['fault']
+    assert f and 'hunting' in f['msg'] and not mount.script
+    assert sw._saved()['last_bearing'] == pytest.approx(129.8, abs=0.01)  # the pointing at the stop is what is remembered
+
+
+def test_guard_clean_move_has_no_fault_and_saves_pointing(mount):
+    sw.calibrate(110)
+    mount.script_on_go = [_deg(8), _deg(16), _deg(20.06)]
+    sw.goto(130)
+    st = sw.status()
+    assert st['fault'] is None and st['bearing'] == 130.1                       # (status rounds to 0.1)
+    assert sw._saved()['last_unwrapped'] == pytest.approx(130.06, abs=0.01)
+    mount.script_on_go = []
+    sw.goto(131)                                                           # next move clears / starts clean
+    assert sw.status()['fault'] is None

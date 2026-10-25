@@ -17,6 +17,7 @@ class SerialFakeMount:
 
     def __init__(self):
         self.pos, self.log, self.err, self.dir, self.inc = 0, [], None, 0, 0
+        self.script, self.script_on_go = [], []
         self.powered, self.inited, self.echo = True, True, False
         self.master, slave = pty.openpty()
         self.path = os.ttyname(slave)

@@ -65,6 +65,11 @@ _last = None
 _ser = {'port': None, 'dev': None}     # the open serial port (re-opened on error / settings change)
 _power = {'state': None, 'since': None}   # socket state: 'on' / 'off' / None (unknown), from its own reports
 _activity = time.time()                # last time a command was sent (idle power-off timer)
+SUPERVISE_S = 0.25                     # how often the move guard reads the mount while it is turning
+SUPERVISE_ASYNC = True                 # guard runs in its own thread (tests run it inline)
+LIMIT_MARGIN_DEG = 0.5                 # beyond the travel limit by more than this = emergency stop
+_gen = 0                               # id of the newest move; an older move's guard stands down
+_fault = None                          # last emergency stop {'ts', 'msg', 'bearing'} (shown in the UI)
 
 # ---- link watch: log each drop-out/recovery with a timestamp, poll fast while the mount is down ----
 UP_POLL_S = 30                         # normal poll interval
@@ -585,6 +590,71 @@ def _wait_stopped(s, limit=3.0):
     return False
 
 
+def _supervise(delta, start, cpr, gen):
+    """Move guard: while the mount turns, read it every SUPERVISE_S and STOP it if it crosses the travel limit, runs past
+    the commanded distance, or turns back on itself (hunting). Also keeps the saved pointing up to date."""
+    global _fault
+    direction = 1 if delta >= 0 else -1
+    want = abs(delta)
+    allow = max(round(1.5 * cpr / 360), round(want * 0.1))            # overshoot we tolerate
+    back_allow = max(1, round(0.5 * cpr / 360))                       # turning back by more than this = hunting
+    peak, bad, last_save = 0, 0, 0.0
+    while True:
+        time.sleep(SUPERVISE_S)
+        reason, running = None, True
+        try:
+            with _lock:
+                if gen != _gen:
+                    return                                            # a newer move owns the mount now
+                s = settings()
+                pos = _pos(s)
+                running = _running(s)
+                bad = 0
+                b = bearing_of(s, pos, cpr)
+                _touch()
+                lo, hi = s['ref_bearing'] - s['travel_deg'], s['ref_bearing'] + s['travel_deg']
+                prog = (pos - start) * direction
+                peak = max(peak, prog)
+                if b < lo - LIMIT_MARGIN_DEG or b > hi + LIMIT_MARGIN_DEG:
+                    reason = f'travel limit exceeded ({b:.1f} deg, allowed {lo:.0f} to {hi:.0f})'
+                elif prog - want > allow:
+                    reason = f'overshot the target by {(prog - want) * 360.0 / cpr:.1f} deg'
+                elif peak >= want - allow and peak - prog > back_allow:
+                    reason = 'hunting around the target (turning back on itself)'
+                if reason:
+                    try:
+                        _x(s, ':L1')
+                        _wait_stopped(s)
+                        pos = _pos(s)
+                        b = bearing_of(s, pos, cpr)
+                    except MountError:
+                        pass
+                    _fault = {'ts': time.time(), 'msg': 'mount stopped: ' + reason, 'bearing': round(b % 360.0, 1)}
+                    _log(f'[mount] EMERGENCY STOP: {reason}; now at {b % 360.0:.1f} deg')
+                now = time.time()
+                if reason or not running or now - last_save > 1.0:
+                    _remember(pos, b)
+                    last_save = now
+        except MountError as e:
+            bad += 1
+            if bad >= 4:
+                _log(f'[mount] guard lost the mount while it was moving: {e}')
+                return
+            continue
+        if reason or not running:
+            return
+
+
+def _start_supervisor(delta, start, cpr):
+    global _gen, _fault
+    _gen += 1
+    _fault = None
+    if SUPERVISE_ASYNC:
+        threading.Thread(target=_supervise, args=(delta, start, cpr, _gen), daemon=True, name='mount-guard').start()
+    else:
+        _supervise(delta, start, cpr, _gen)
+
+
 def goto(az, s=None):
     """Slew the antenna to compass bearing `az`. Returns a detail dict."""
     global _last
@@ -612,6 +682,7 @@ def goto(az, s=None):
             _x(s, ':H1' + hex24(n))
             _x(s, ':M1' + hex24(brake))
             _x(s, ':J1')
+            _start_supervisor(delta, pos, cpr)
             res = {'detail': f'mount slewing to {tgt % 360:.1f}° ({delta_deg:+.1f}° turn)', 'moved_deg': round(delta_deg, 1),
                    'actual': round(cur % 360, 1)}
         _touch()
@@ -674,7 +745,7 @@ def status(s=None, remember=True):
     """Settings plus a live reading (never raises): reachable, actual bearing, moving."""
     s = s or settings()
     out = {'ok': True, 'settings': s, 'calibrated': s.get('ref_pos') is not None, 'reachable': False, 'last': _last,
-           'power': _power['state'] if _managed(s) else None}
+           'power': _power['state'] if _managed(s) else None, 'fault': _fault}
     if not _target(s):
         out['message'] = 'mount address not set'
         return out

@@ -900,6 +900,7 @@ function mountFill(d, keepForm){
   } else if (configured && lk && lk.up === false && lk.down_at){
     t += ' Down since ' + new Date(lk.down_at * 1000).toLocaleTimeString('en-GB', {hour12: false}) + '.';
   }
+  if (d.fault) t = 'STOPPED ' + new Date(d.fault.ts * 1000).toLocaleTimeString('en-GB', {hour12: false}) + ': ' + d.fault.msg + ' (now ' + d.fault.bearing + '\u00b0). ' + t;
   v('mt-info').textContent = t;
   const rb = v('mt-restore'); if (rb) rb.style.display = d.power_cycled ? '' : 'none';
   window.mountCfg = {host: configured, calibrated: !!d.calibrated, moving: !!d.moving};
