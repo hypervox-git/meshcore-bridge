@@ -162,7 +162,7 @@ def validate(d):
     if 'travel_deg' in d:
         out['travel_deg'] = _num(d['travel_deg'], 'travel limit', 30, 360)
     if 'brake_deg' in d:
-        out['brake_deg'] = _num(d['brake_deg'], 'brake distance', 0.5, 30)
+        out['brake_deg'] = _num(d['brake_deg'], 'brake distance', 0.1, 30)
     if 'invert' in d:
         out['invert'] = bool(d['invert'])
     if 'transport' in d:
