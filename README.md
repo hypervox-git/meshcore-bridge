@@ -195,6 +195,16 @@ Test tab -> **Sky-Watcher mount**. Choose **Sky-Watcher** as the action in *Ante
 
 **Restarts and power cycles:** the last position read from the mount is saved (`meshcore_mount.json`), and the modelled aim (`meshcore_antenna.json`) is kept equal to the real bearing, also by a 30 s background task, so a bridge restart loses nothing. If the *mount* is switched off and on, its count resets: the card then says so and refuses moves until you press **Restore last pointing** (antenna not moved while it was off) or **Set current pointing**. While the mount turns, the blue beam and the antenna-type ghost on the Map follow its real bearing (polled twice a second; the beam never jumps to the target first), and a flashing red **>>>>Mount Slewing<<<<** banner with the live azimuth is shown over the map. The Map toolbar also has a **Base stations** list: every public repeater within `PUBLIC_ALWAYS_KM` (20 km) is drawn on the map and listed there, nearest first, to select and **Point antenna** at (or click its marker).
 
+#### AllView (USB serial) and a Zigbee power socket
+
+The Sky-Watcher AllView motor board speaks the same protocol as the AZ-GTI, over serial instead of WiFi.
+
+- **Connection -> USB serial.** Plug the USB-serial (RJ12) adapter into the mount's handset port with the handset unplugged, set *Serial port* (9600 baud; a `/dev/serial/by-id/...` path survives re-plugging) and **Save**. The Pi user needs the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again). `pip install pyserial` (in `requirements.txt`).
+- **Mount power -> Zigbee socket.** Enter the Zigbee2MQTT base topic of the socket (e.g. `zigbee2mqtt/mount_socket`, no `/set`). A move then: switches the socket on, waits for the controller to answer (*Boot timeout*), initialises it, re-pairs the fresh position count with the last known bearing, and slews. The mount is switched off again *Switch off after* seconds once it has stopped; the final position is saved first, and the socket is never cut while the mount is moving or not answering. While it is off the card shows the last known pointing and does not poll it.
+- **Assumption:** the antenna does not move while the mount is unpowered (keep the clutch tight and the load balanced; a strong wind on a Yagi can back-drive it). If you move it by hand, press **Set current pointing** afterwards.
+- The travel-limit window keeps its original centre across power cycles, so cable protection still holds.
+- The socket's state is read from its Zigbee2MQTT state topic (the bridge re-requests it after every MQTT reconnect). Set the socket's Zigbee2MQTT *power-on behaviour* to OFF so a mains cut does not leave the mount on.
+
 Only the azimuth axis is used; keep the altitude axis level. The bridge reads the real position back, so the card shows where the antenna actually points. Protocol: Sky-Watcher motor-controller commands over UDP (`bridge/skywatcher.py`). It has been tested against an emulator only, so try small nudges first; if it overshoots, raise *Brake distance*.
 
 ### MQTT monitor page

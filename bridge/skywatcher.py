@@ -18,6 +18,13 @@
 #   * a mount POWER CYCLE is detected (count back at exactly 0 though it was somewhere else) and moves are
 #     refused until you press Set current pointing or Restore last pointing (antenna not moved while off);
 #   * the modelled antenna aim (map beam / ghosts, meshcore_antenna.json) follows the real bearing (sync_model).
+# TRANSPORT: 'udp' (AZ-GTI WiFi, port 11880) or 'serial' (USB-serial adapter into the mount's RJ12 port, 9600 8N1 - the
+# Sky-Watcher AllView / SynScan mounts speak the same motor-controller protocol there, handset unplugged).
+# POWER (power_mode 'zigbee'): the mount sits behind a Zigbee2MQTT socket and is only powered for a move. A move powers
+# the socket, waits for the controller to boot (and initialises it), re-pairs the fresh count with the last known
+# bearing (the antenna cannot move while unpowered), slews, and the background task switches the socket off again
+# idle_off_s after the mount has stopped. While it is off, status() reports the last known bearing without touching it.
+# The travel-limit window keeps its original centre (ref_bearing) across power cycles, so coax protection still holds.
 # NOT verified on hardware by the author: check the direction ('Reverse direction') with the +/- 10 buttons.
 import json
 import math
@@ -43,9 +50,16 @@ def _file():
 
 HOME = 0x800000                        # position register value at power-on
 DEADBAND_DEG = 0.3                     # don't move for less than this
+BAUD = 9600                            # motor-controller serial speed (8N1)
+BOOT_PROBE_S = 0.5                     # reply timeout for each "is it up yet?" probe after power-on
+BOOT_POLL_S = 0.5                      # pause between probes
+OFF_CHECK_S = 10                       # background poll while the socket is on (to switch it off promptly)
 _lock = threading.RLock()
 _cpr_cache = {}
 _last = None
+_ser = {'port': None, 'dev': None}     # the open serial port (re-opened on error / settings change)
+_power = {'state': None, 'since': None}   # socket state: 'on' / 'off' / None (unknown), from its own reports
+_activity = time.time()                # last time a command was sent (idle power-off timer)
 
 # ---- link watch: log each drop-out/recovery with a timestamp, poll fast while the mount is down ----
 UP_POLL_S = 30                         # normal poll interval
@@ -94,8 +108,11 @@ CYCLED = ('the mount seems to have been power-cycled (its position count was res
 # ---- settings ---------------------------------------------------------------------------
 
 DEFAULTS = {'host': '', 'port': 11880, 'ref_bearing': 0.0, 'ref_pos': None, 'travel_deg': 180.0,
-            'invert': False, 'brake_deg': 5.0, 'last_pos': None, 'last_bearing': None}
+            'invert': False, 'brake_deg': 5.0, 'last_pos': None, 'last_bearing': None, 'last_unwrapped': None,
+            'transport': 'udp', 'serial_port': '/dev/ttyUSB0',
+            'power_mode': 'always', 'power_topic': '', 'boot_timeout_s': 25.0, 'idle_off_s': 60.0}
 _HOST = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
+_SERIAL = re.compile(r'^/dev/[A-Za-z0-9_./-]{1,60}$')
 
 
 def _saved():
@@ -143,6 +160,31 @@ def validate(d):
         out['brake_deg'] = _num(d['brake_deg'], 'brake distance', 0.5, 30)
     if 'invert' in d:
         out['invert'] = bool(d['invert'])
+    if 'transport' in d:
+        if d['transport'] not in ('udp', 'serial'):
+            raise ValueError("connection must be 'udp' or 'serial'")
+        out['transport'] = d['transport']
+    if 'serial_port' in d:
+        p = str(d['serial_port'] or '').strip()
+        if not _SERIAL.match(p):
+            raise ValueError('serial port must be a device path such as /dev/ttyUSB0')
+        out['serial_port'] = p
+    if 'power_mode' in d:
+        if d['power_mode'] not in ('always', 'zigbee'):
+            raise ValueError("power must be 'always' or 'zigbee'")
+        out['power_mode'] = d['power_mode']
+    if 'power_topic' in d:
+        t = str(d['power_topic'] or '').strip().strip('/')
+        if t:
+            from bridge.steer import check_topic
+            t = check_topic(t)
+            if t.endswith('/set') or t.endswith('/get'):
+                raise ValueError('power topic is the socket\'s base topic (e.g. zigbee2mqtt/mount_socket), without /set')
+        out['power_topic'] = t
+    if 'boot_timeout_s' in d:
+        out['boot_timeout_s'] = _num(d['boot_timeout_s'], 'boot timeout', 5, 120)
+    if 'idle_off_s' in d:
+        out['idle_off_s'] = _num(d['idle_off_s'], 'switch-off delay', 10, 3600)
     return out
 
 
@@ -158,7 +200,7 @@ def _remember(pos, bearing):
     cur = _saved()
     if cur.get('last_pos') == pos:
         return
-    cur.update(last_pos=pos, last_bearing=round(bearing % 360.0, 1))
+    cur.update(last_pos=pos, last_bearing=round(bearing % 360.0, 3), last_unwrapped=round(bearing, 3))
     try:
         _write(cur)
     except OSError as e:
@@ -170,10 +212,38 @@ def power_cycled(s, pos):
     return pos == 0 and s.get('last_pos') not in (None, 0)
 
 
+def _last_unwrapped(s):
+    """The last known UNWRAPPED bearing (so the travel window is respected); older files only hold the 0-360 value."""
+    ub = s.get('last_unwrapped')
+    if ub is not None:
+        return float(ub)
+    lb = float(s['last_bearing'])
+    try:
+        return choose_target(s, lb, s['ref_bearing'])
+    except MountError:
+        return lb
+
+
+def _rebase(s, pos, cpr):
+    """Re-pair the current count `pos` with the last known bearing, keeping ref_bearing (the centre of the travel
+    window) unchanged, so repeated power cycles can never slide the cable-protection window."""
+    ub = _last_unwrapped(s)
+    ref_pos = pos - round(_sign(s) * (ub - s['ref_bearing']) * cpr / 360.0)
+    cur = _saved()
+    cur.update(ref_pos=ref_pos, last_pos=pos, last_bearing=round(ub % 360.0, 3), last_unwrapped=round(ub, 3))
+    _write(cur)
+    return ub
+
+
 def save_settings(update):
     cur = _saved()
     cur.update(validate(update if isinstance(update, dict) else {}))
     _write(cur)
+    _close_serial()                        # port / transport may have changed: re-open on next use
+    try:
+        watch_power()                      # (re)subscribe to the socket's state topic
+    except Exception as e:
+        print(f'[mount] power watch: {e}')
     return settings()
 
 
@@ -195,8 +265,22 @@ ERRORS = {'0': 'unknown command', '1': 'command length error', '2': 'motor not s
           '4': 'not initialised', '5': 'driver asleep', '7': 'PEC training running', '8': 'no valid PEC data'}
 
 
+def _parse_reply(line, data):
+    """Reply bytes -> data after '='. Raises MountError for '!' replies and anything else."""
+    r = data.decode('ascii', 'replace').strip()
+    for i, ch in enumerate(r):             # skip any echo / line noise before the reply marker
+        if ch in '=!':
+            r = r[i:]
+            break
+    if r.startswith('='):
+        return r[1:]
+    if r.startswith('!'):
+        raise MountError(f'mount refused {line!r}: {ERRORS.get(r[1:2], "error " + r[1:])}')
+    raise MountError(f'unexpected reply {r!r}')
+
+
 def exchange(host, port, line, timeout=1.0, tries=3):
-    """Send one controller command, return the reply data. Raises MountError."""
+    """Send one controller command over UDP, return the reply data. Raises MountError."""
     if not host:
         raise MountError('mount address not set')
     msg = (line + '\r').encode()
@@ -212,21 +296,66 @@ def exchange(host, port, line, timeout=1.0, tries=3):
             continue
         finally:
             s.close()
-        r = data.decode('ascii', 'replace').strip()
-        if r.startswith('='):
-            return r[1:]
-        if r.startswith('!'):
-            raise MountError(f'mount refused {line!r}: {ERRORS.get(r[1:2], "error " + r[1:])}')
-        raise MountError(f'unexpected reply {r!r}')
+        return _parse_reply(line, data)
     raise MountError(f'no reply from the mount at {host}:{port} ({last.__class__.__name__ if last else "timeout"})')
 
 
+def _close_serial():
+    with _lock:
+        dev, _ser['dev'], _ser['port'] = _ser['dev'], None, None
+    if dev is not None:
+        try:
+            dev.close()
+        except Exception:
+            pass
+
+
+def exchange_serial(path, line, timeout=1.0, tries=3):
+    """Send one controller command over the USB-serial adapter (9600 8N1), return the reply data. Raises MountError."""
+    if not path:
+        raise MountError('serial port not set')
+    try:
+        import serial
+    except ImportError:
+        raise MountError('pyserial is not installed (pip install pyserial)')
+    msg = (line + '\r').encode()
+    last = None
+    for _ in range(tries):
+        try:
+            if _ser['dev'] is None or _ser['port'] != path:
+                _close_serial()
+                _ser['dev'], _ser['port'] = serial.Serial(path, BAUD, timeout=timeout, write_timeout=timeout), path
+            dev = _ser['dev']
+            dev.timeout = timeout
+            dev.reset_input_buffer()
+            dev.write(msg)
+            dev.flush()
+            data = dev.read_until(b'\r')
+        except (serial.SerialException, OSError, ValueError) as e:
+            last = e
+            _close_serial()                # unplugged / re-enumerated: open it afresh on the next try
+            time.sleep(0.2)
+            continue
+        if not data.endswith(b'\r'):
+            last = socket.timeout()
+            continue
+        return _parse_reply(line, data)
+    raise MountError(f'no reply from the mount on {path} ({last.__class__.__name__ if last else "timeout"})')
+
+
 def _x(s, line, **kw):
+    if s.get('transport') == 'serial':
+        return exchange_serial(s['serial_port'], line, **kw)
     return exchange(s['host'], s['port'], line, **kw)
 
 
+def _target(s):
+    """Where the mount is reached (for messages and the 'is it configured' check)."""
+    return s['serial_port'] if s.get('transport') == 'serial' else s['host']
+
+
 def _cpr(s):
-    k = (s['host'], s['port'])
+    k = (s.get('transport'), s['host'], s['port'], s.get('serial_port'))
     if k not in _cpr_cache:
         v = parse24(_x(s, ':a1'))
         if v < 1000:
@@ -242,6 +371,159 @@ def _pos(s):
 def _running(s):
     st = _x(s, ':f1')
     return len(st) >= 2 and bool(int(st[1], 16) & 1)
+
+
+def _ensure_init(s):
+    """After a power-up the controller refuses motion until it is initialised (':F1'); status ':f1' digit 3 bit 0 = done."""
+    st = _x(s, ':f1')
+    if len(st) >= 3 and int(st[2], 16) & 1:
+        return
+    _x(s, ':F1')
+
+
+# ---- socket power (Zigbee2MQTT) ---------------------------------------------------------
+
+def _mqtt():
+    from bridge import mqtt_bridge
+    return mqtt_bridge.mqttc
+
+
+def _managed(s):
+    return s.get('power_mode') == 'zigbee'
+
+
+def _touch():
+    global _activity
+    _activity = time.time()
+
+
+def _on_power_msg(client, userdata, msg):
+    """The socket's own state report (Zigbee2MQTT JSON {"state": "ON"} or a bare ON/OFF) -> our idea of its state."""
+    try:
+        raw = msg.payload.decode().strip()
+        try:
+            v = json.loads(raw)
+            raw = v.get('state') if isinstance(v, dict) else v
+        except ValueError:
+            pass
+        st = str(raw).upper()
+    except Exception:
+        return
+    if st in ('ON', 'OFF'):
+        with _lock:
+            new = st.lower()
+            if _power['state'] != new:
+                _power.update(state=new, since=time.time())
+                if new == 'off':
+                    _link.update(up=None, down_at=None)          # a deliberate switch-off is not a link failure
+
+
+_watching = {'topic': None}
+
+
+def watch_power():
+    """Subscribe to the socket's state topic (and ask it to report now). Safe to call repeatedly; called again on every
+    MQTT reconnect because the subscription does not survive one."""
+    s = settings()
+    topic = s['power_topic'] if _managed(s) and s['power_topic'] else None
+    from bridge import state
+    old = _watching['topic']
+    if not topic and not old:
+        return
+    c = _mqtt()
+    if old and old != topic:
+        try:
+            c.message_callback_remove(old)
+            c.unsubscribe(old)
+        except Exception:
+            pass
+        _watching['topic'] = None
+    if topic and state.mqtt_connected:
+        c.message_callback_add(topic, _on_power_msg)
+        c.subscribe(topic, qos=1)
+        c.publish(topic + '/get', json.dumps({'state': ''}))
+        _watching['topic'] = topic
+
+
+def on_mqtt_connect():
+    try:
+        watch_power()
+    except Exception as e:
+        print(f'[mount] power watch: {e}')
+
+
+def _set_power(s, on):
+    """Switch the socket (QoS 1, waits for the broker's ack). The state is set optimistically; the socket's own
+    report confirms or corrects it."""
+    from bridge import state
+    if not _managed(s) or not s.get('power_topic'):
+        raise MountError('mount power socket topic not set (Zigbee power is selected)')
+    if not state.mqtt_connected:
+        raise MountError('MQTT broker not connected - cannot switch the mount socket')
+    info = _mqtt().publish(s['power_topic'] + '/set', json.dumps({'state': 'ON' if on else 'OFF'}), qos=1)
+    if getattr(info, 'rc', 0) != 0:
+        raise MountError(f'could not publish to the mount socket (rc={info.rc})')
+    try:
+        info.wait_for_publish(timeout=3)
+    except (ValueError, RuntimeError):
+        pass
+    if not info.is_published():
+        raise MountError('the broker did not acknowledge the mount socket command within 3 s')
+    with _lock:
+        _power.update(state='on' if on else 'off', since=time.time())
+        if not on:
+            _link.update(up=None, down_at=None)
+    print(f'[mount] socket {"ON" if on else "OFF"} ({s["power_topic"]})')
+
+
+def _asleep(s):
+    """Managed power and the socket is not known to be on: the mount is not reachable by design - don't poll it."""
+    return _managed(s) and _power['state'] != 'on'
+
+
+def _wake(s, rebase=True):
+    """Make sure the mount is powered, answering and initialised; returns fresh settings. Managed power only (otherwise a
+    no-op). Right after OUR power-up the count is back at zero: re-pair it with the last known bearing (unless rebase
+    is off because the caller is about to set the pointing itself)."""
+    if not _managed(s):
+        return s
+    with _lock:
+        _touch()
+        if _power['state'] != 'on':
+            _set_power(s, True)
+        end = time.time() + s['boot_timeout_s']
+        while True:
+            try:
+                _x(s, ':a1', timeout=BOOT_PROBE_S, tries=1)
+                break
+            except MountError as e:
+                if time.time() >= end:
+                    raise MountError(f'the mount did not answer {s["boot_timeout_s"]:.0f} s after power-up '
+                                     f'(check the socket, the USB adapter and the cable): {e}')
+                time.sleep(BOOT_POLL_S)
+        _ensure_init(s)
+        if rebase and s.get('ref_pos') is not None and power_cycled(s, _pos(s)):
+            _rebase(s, _pos(s), _cpr(s))
+            print('[mount] powered up: position re-paired with the last known bearing')
+        _touch()
+        return settings()
+
+
+def idle_check():
+    """Background: switch the socket off once the mount has been idle for idle_off_s. Never cuts power unless the
+    mount answered and reported it is stopped, and records its final position first. Returns True if it switched off."""
+    s = settings()
+    if not _managed(s) or _power['state'] != 'on' or time.time() - _activity < s['idle_off_s']:
+        return False
+    with _lock:
+        st = status(s)
+        if not st.get('reachable'):
+            return False                   # can't tell whether it is still turning: leave the power alone
+        if st.get('moving'):
+            _touch()
+            return False
+        _set_power(s, False)
+    return True
 
 
 # ---- bearing <-> counts -----------------------------------------------------------------
@@ -293,6 +575,7 @@ def goto(az, s=None):
     s = s or settings()
     with _lock:
         _calibrated(s)
+        s = _wake(s)                       # managed power: switch on, wait for boot, re-pair the count
         cpr = _cpr(s)
         pos = _pos(s)
         if power_cycled(s, pos):
@@ -315,6 +598,7 @@ def goto(az, s=None):
             _x(s, ':J1')
             res = {'detail': f'mount slewing to {tgt % 360:.1f}° ({delta_deg:+.1f}° turn)', 'moved_deg': round(delta_deg, 1),
                    'actual': round(cur % 360, 1)}
+        _touch()
         _last = dict(res, ts=time.time(), target=round(float(az) % 360, 1))
         return res
 
@@ -323,6 +607,7 @@ def nudge(delta_deg, s=None):
     s = s or settings()
     with _lock:
         _calibrated(s)
+        s = _wake(s)
         cur = bearing_of(s, _pos(s), _cpr(s))
         return goto((cur + float(_num(delta_deg, 'nudge', -90, 90))) % 360.0, s)
 
@@ -330,7 +615,10 @@ def nudge(delta_deg, s=None):
 def stop(s=None):
     s = s or settings()
     with _lock:
+        if _asleep(s):
+            return {'detail': 'mount is switched off - nothing to stop'}
         _x(s, ':L1')
+        _touch()
     return {'detail': 'mount stopped'}
 
 
@@ -340,31 +628,50 @@ def calibrate(bearing=None, s=None):
     if bearing is not None:
         s['ref_bearing'] = _num(bearing, 'initial bearing', 0, 360) % 360.0
     with _lock:
+        s = dict(_wake(s, rebase=False), ref_bearing=s['ref_bearing'])
         if _running(s):
             raise MountError('the mount is moving - wait for it to stop, then set the pointing')
         _cpr(s)
         pos = _pos(s)
     cur = _saved()
-    cur.update(ref_bearing=s['ref_bearing'], ref_pos=pos, last_pos=pos, last_bearing=round(s['ref_bearing'], 1))
+    cur.update(ref_bearing=s['ref_bearing'], ref_pos=pos, last_pos=pos, last_bearing=round(s['ref_bearing'], 3),
+               last_unwrapped=round(s['ref_bearing'], 3))
     _write(cur)
     return {'detail': f"mount pointing set to {s['ref_bearing']:.1f}° (motor count {pos})"}
 
 
 def restore(s=None):
-    """After a mount power cycle: assume the antenna is still where it was last seen and re-pair the new count with it."""
+    """After a mount power cycle: assume the antenna is still where it was last seen and re-pair the new count with it
+    (the travel-window centre stays where it was)."""
     s = s or settings()
-    if s.get('last_bearing') is None:
+    if s.get('last_bearing') is None or s.get('ref_pos') is None:
         raise MountError('no previous pointing is stored - point the antenna at a known bearing and press "Set current pointing"')
-    r = calibrate(s['last_bearing'], s)
-    return {'detail': 'restored: ' + r['detail']}
+    with _lock:
+        s = _wake(s, rebase=False)
+        if _running(s):
+            raise MountError('the mount is moving - wait for it to stop first')
+        ub = _rebase(s, _pos(s), _cpr(s))
+    return {'detail': f'restored: mount pointing set to {ub % 360.0:.1f}°'}
 
 
 def status(s=None, remember=True):
     """Settings plus a live reading (never raises): reachable, actual bearing, moving."""
     s = s or settings()
-    out = {'ok': True, 'settings': s, 'calibrated': s.get('ref_pos') is not None, 'reachable': False, 'last': _last}
-    if not s['host']:
+    out = {'ok': True, 'settings': s, 'calibrated': s.get('ref_pos') is not None, 'reachable': False, 'last': _last,
+           'power': _power['state'] if _managed(s) else None}
+    if not _target(s):
         out['message'] = 'mount address not set'
+        return out
+    if _asleep(s):
+        # Switched off on purpose: do not poll it (nothing to read) and do not count it as a link failure. The antenna
+        # cannot move while unpowered, so the last bearing seen is still the pointing.
+        out.update(asleep=True, power=_power['state'] or 'unknown',
+                   message='mount is switched off (socket %s); it powers up when a move is commanded' % (_power['state'] or 'state unknown'))
+        if s.get('ref_pos') is not None and s.get('last_bearing') is not None:
+            ub = _last_unwrapped(s)
+            out.update(bearing=round(ub % 360, 1), unwrapped=round(ub, 1),
+                       travel_left=round(s['travel_deg'] - abs(ub - s['ref_bearing']), 1))
+        out['link'] = link_view()
         return out
     try:
         with _lock:
@@ -408,10 +715,14 @@ def start():
         while True:
             wait = UP_POLL_S
             try:
-                if settings()['host']:
+                s = settings()
+                if _target(s):
                     sync_model()
+                    idle_check()           # managed power: switch the socket off once the mount has been idle
                     if _link['up'] is False:
                         wait = DOWN_POLL_S
+                    elif _managed(s) and _power['state'] == 'on':
+                        wait = OFF_CHECK_S
             except Exception as e:
                 print(f'[mount] {e}')
             time.sleep(wait)

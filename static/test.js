@@ -863,7 +863,16 @@ steerLoad(false);
 function mountForm(){
   const v = id => document.getElementById(id);
   return {host: v('mt-host').value.trim(), port: parseInt(v('mt-port').value, 10), ref_bearing: parseFloat(v('mt-bearing').value),
-          travel_deg: parseFloat(v('mt-travel').value), brake_deg: parseFloat(v('mt-brake').value), invert: v('mt-invert').checked};
+          travel_deg: parseFloat(v('mt-travel').value), brake_deg: parseFloat(v('mt-brake').value), invert: v('mt-invert').checked,
+          transport: v('mt-transport').value, serial_port: v('mt-serial').value.trim(), power_mode: v('mt-power').value,
+          power_topic: v('mt-ptopic').value.trim(), boot_timeout_s: parseFloat(v('mt-boot').value), idle_off_s: parseFloat(v('mt-idle').value)};
+}
+function mountShow(){                                      // show only the rows that apply to the chosen connection / power mode
+  const v = id => document.getElementById(id); if (!v('mt-transport')) return;
+  const ser = v('mt-transport').value === 'serial', zb = v('mt-power').value === 'zigbee';
+  v('mt-row-host').style.display = v('mt-row-port').style.display = ser ? 'none' : '';
+  v('mt-row-serial').style.display = ser ? '' : 'none';
+  document.querySelectorAll('.mt-zb').forEach(r => r.style.display = zb ? '' : 'none');
 }
 function mountFill(d, keepForm){
   const v = id => document.getElementById(id); if (!v('mt-host')) return;
@@ -871,24 +880,29 @@ function mountFill(d, keepForm){
   if (!keepForm){
     v('mt-host').value = s.host; v('mt-port').value = s.port; v('mt-bearing').value = s.ref_bearing;
     v('mt-travel').value = s.travel_deg; v('mt-brake').value = s.brake_deg; v('mt-invert').checked = !!s.invert;
+    v('mt-transport').value = s.transport; v('mt-serial').value = s.serial_port; v('mt-power').value = s.power_mode;
+    v('mt-ptopic').value = s.power_topic; v('mt-boot').value = s.boot_timeout_s; v('mt-idle').value = s.idle_off_s;
+    mountShow();
   }
+  const configured = s.transport === 'serial' ? !!s.serial_port : !!s.host;
   let t;
-  if (!s.host) t = 'Enter the mount IP address and press Save.';
+  if (!configured) t = 'Enter the mount IP address and press Save.';
+  else if (d.asleep) t = (d.message || 'Mount is switched off.') + (d.calibrated ? ' Last known pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.' : '');
   else if (!d.reachable) t = 'Mount not reachable' + (d.message ? ': ' + d.message : '') + '.';
   else t = 'Mount reachable' + (d.moving ? ' (moving)' : '') + '. ' + (d.calibrated
     ? 'Pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.'
     : 'Not calibrated yet: point the antenna at the bearing above and press Set current pointing.');
   if (d.power_cycled) t = 'Mount position was reset (power-cycled?). If the antenna has not been moved since, press Restore last pointing' + (s.last_bearing != null ? ' (' + s.last_bearing + '\u00b0)' : '') + '; otherwise point it at a known bearing and press Set current pointing.';
   const lk = d.link;
-  if (s.host && lk && lk.outages && lk.outages.length){
+  if (configured && lk && lk.outages && lk.outages.length){
     const o = lk.outages[lk.outages.length - 1];
     t += ' Last drop-out ' + new Date(o.start * 1000).toLocaleString('en-GB', {hour12: false}) + ' for ' + o.secs + ' s (' + lk.outages.length + ' since the bridge started).';
-  } else if (s.host && lk && lk.up === false && lk.down_at){
+  } else if (configured && lk && lk.up === false && lk.down_at){
     t += ' Down since ' + new Date(lk.down_at * 1000).toLocaleTimeString('en-GB', {hour12: false}) + '.';
   }
   v('mt-info').textContent = t;
   const rb = v('mt-restore'); if (rb) rb.style.display = d.power_cycled ? '' : 'none';
-  window.mountCfg = {host: s.host, calibrated: !!d.calibrated, moving: !!d.moving};
+  window.mountCfg = {host: configured, calibrated: !!d.calibrated, moving: !!d.moving};
   mountBanner(d);
   mountFollow(d);
 }

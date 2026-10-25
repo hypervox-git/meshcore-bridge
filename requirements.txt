@@ -2,4 +2,5 @@ Flask
 Flask-SocketIO
 simple-websocket
 paho-mqtt
+pyserial
 meshcore

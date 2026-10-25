@@ -13,6 +13,7 @@ class FakeMount:
     """Minimal motor-controller emulator: instant goto, records every command."""
     def __init__(self):
         self.pos, self.log, self.err = 0, [], None
+        self.powered, self.inited = True, True          # unpowered: no reply at all; uninitialised: refuses to move
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(('127.0.0.1', 0))
         self.port = self.sock.getsockname()[1]
@@ -25,15 +26,20 @@ class FakeMount:
             return '!0'
         if c == 'a': return '=' + sw.hex24(CPR)
         if c == 'j': return '=' + sw.hex24(self.pos + sw.HOME)
-        if c == 'f': return '=101'
+        if c == 'f': return '=10' + ('1' if self.inited else '0')
+        if c == 'F': self.inited = True; return '='
         if c == 'G': self.dir = int(line[4]); return '='
         if c == 'H': self.inc = sw.parse24(line[3:9]); return '='
-        if c == 'J': self.pos += -self.inc if self.dir else self.inc; return '='
+        if c == 'J':
+            if not self.inited: return '!4'
+            self.pos += -self.inc if self.dir else self.inc; return '='
         return '='
 
     def run(self):
         while True:
             data, addr = self.sock.recvfrom(256)
+            if not self.powered:
+                continue
             line = data.decode().strip()
             self.log.append(line)
             self.sock.sendto((self.reply(line) + '\r').encode(), addr)

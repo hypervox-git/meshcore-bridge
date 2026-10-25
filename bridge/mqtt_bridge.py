@@ -28,6 +28,11 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
             mqtt_monitor.on_connect()
         except Exception as e:
             print(f"MQTT monitor: {e}")
+        try:                                   # antenna mount's Zigbee socket: restore its state subscription
+            from bridge import skywatcher
+            skywatcher.on_mqtt_connect()
+        except Exception as e:
+            print(f"Mount power watch: {e}")
 
 
 def on_mqtt_disconnect(client, userdata, disconnect_flags, reason_code, properties):
