@@ -44,6 +44,11 @@ def _c(name, default):
     return getattr(_cfg, name, default) if _cfg else default
 
 
+def _log(msg):
+    """Print and flush: under systemd stdout is block-buffered, so [mount] lines would otherwise not reach the journal."""
+    print(msg, flush=True)
+
+
 def _file():
     return _c('MOUNT_FILE', 'meshcore_mount.json')
 
@@ -78,16 +83,16 @@ def _note_link(up, msg=''):
         stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))
         if not up:
             _link['down_at'] = now
-            print(f'[mount] {stamp} LOST: {msg}')
+            _log(f'[mount] {stamp} LOST: {msg}')
             return
         d = _link['down_at']
         if prev is False and d:
             secs = round(now - d)
             _link['outages'].append({'start': d, 'end': now, 'secs': secs})
             del _link['outages'][:-20]
-            print(f'[mount] {stamp} RECOVERED after {secs} s')
+            _log(f'[mount] {stamp} RECOVERED after {secs} s')
         else:
-            print(f'[mount] {stamp} reachable')
+            _log(f'[mount] {stamp} reachable')
         _link['down_at'] = None
 
 
@@ -112,7 +117,7 @@ DEFAULTS = {'host': '', 'port': 11880, 'ref_bearing': 0.0, 'ref_pos': None, 'tra
             'transport': 'udp', 'serial_port': '/dev/ttyUSB0',
             'power_mode': 'always', 'power_topic': '', 'boot_timeout_s': 25.0, 'idle_off_s': 60.0}
 _HOST = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
-_SERIAL = re.compile(r'^/dev/[A-Za-z0-9_./-]{1,60}$')
+_SERIAL = re.compile(r'^/dev/[A-Za-z0-9_./-]{1,120}$')
 
 
 def _saved():
@@ -204,7 +209,7 @@ def _remember(pos, bearing):
     try:
         _write(cur)
     except OSError as e:
-        print(f'[mount] could not save position: {e}')
+        _log(f'[mount] could not save position: {e}')
 
 
 def power_cycled(s, pos):
@@ -243,7 +248,7 @@ def save_settings(update):
     try:
         watch_power()                      # (re)subscribe to the socket's state topic
     except Exception as e:
-        print(f'[mount] power watch: {e}')
+        _log(f'[mount] power watch: {e}')
     return settings()
 
 
@@ -388,7 +393,7 @@ def _ensure_init(s):
     try:
         _x(s, ':F1')
     except MountError as e:                # some controllers refuse it; a real problem will show up on the move itself
-        print(f'[mount] init command (:F1) refused, carrying on: {e}')
+        _log(f'[mount] init command (:F1) refused, carrying on: {e}')
 
 
 # ---- socket power (Zigbee2MQTT) ---------------------------------------------------------
@@ -459,7 +464,7 @@ def on_mqtt_connect():
     try:
         watch_power()
     except Exception as e:
-        print(f'[mount] power watch: {e}')
+        _log(f'[mount] power watch: {e}')
 
 
 def _set_power(s, on):
@@ -483,7 +488,7 @@ def _set_power(s, on):
         _power.update(state='on' if on else 'off', since=time.time())
         if not on:
             _link.update(up=None, down_at=None)
-    print(f'[mount] socket {"ON" if on else "OFF"} ({s["power_topic"]})')
+    _log(f'[mount] socket {"ON" if on else "OFF"} ({s["power_topic"]})')
 
 
 def _asleep(s):
@@ -512,9 +517,10 @@ def _wake(s, rebase=True):
                                      f'(check the socket, the USB adapter and the cable): {e}')
                 time.sleep(BOOT_POLL_S)
         _ensure_init(s)
-        if rebase and s.get('ref_pos') is not None and power_cycled(s, _pos(s)):
-            _rebase(s, _pos(s), _cpr(s))
-            print('[mount] powered up: position re-paired with the last known bearing')
+        pos = _pos(s)
+        if rebase and s.get('ref_pos') is not None and power_cycled(s, pos):
+            _rebase(s, pos, _cpr(s))
+            _log('[mount] powered up: position re-paired with the last known bearing')
         _touch()
         return settings()
 
@@ -734,6 +740,6 @@ def start():
                     elif _managed(s) and _power['state'] == 'on':
                         wait = OFF_CHECK_S
             except Exception as e:
-                print(f'[mount] {e}')
+                _log(f'[mount] {e}')
             time.sleep(wait)
     threading.Thread(target=_loop, daemon=True, name='mount-sync').start()
