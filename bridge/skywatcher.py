@@ -378,7 +378,10 @@ def _ensure_init(s):
     st = _x(s, ':f1')
     if len(st) >= 3 and int(st[2], 16) & 1:
         return
-    _x(s, ':F1')
+    try:
+        _x(s, ':F1')
+    except MountError as e:                # some controllers refuse it; a real problem will show up on the move itself
+        print(f'[mount] init command (:F1) refused, carrying on: {e}')
 
 
 # ---- socket power (Zigbee2MQTT) ---------------------------------------------------------

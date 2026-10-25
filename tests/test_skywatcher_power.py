@@ -241,3 +241,11 @@ def test_steer_and_routes_with_managed_power(managed):
     d = c.get('/api/mount').get_json()
     assert d['ok'] and d['asleep'] and d['bearing'] == 130.0
     assert c.post('/api/mount/stop').get_json()['ok']
+
+
+def test_init_refusal_is_not_fatal(managed):
+    fm = managed
+    fm.inited, fm.err = False, 'F'                                     # controller says "not initialised" but refuses :F1
+    sw._ensure_init(sw.settings())                                     # must not raise
+    with pytest.raises(sw.MountError, match='not initialised'):        # the move then reports the real problem
+        sw.goto(150)
