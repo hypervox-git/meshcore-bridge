@@ -17,7 +17,7 @@ class SerialFakeMount:
 
     def __init__(self):
         self.pos, self.log, self.err, self.dir, self.inc = 0, [], None, 0, 0
-        self.powered, self.inited = True, True
+        self.powered, self.inited, self.echo = True, True, False
         self.master, slave = pty.openpty()
         self.path = os.ttyname(slave)
         self._slave = slave                                   # keep the slave end open
@@ -36,6 +36,8 @@ class SerialFakeMount:
                     continue
                 line = raw.decode().strip()
                 self.log.append(line)
+                if self.echo:                                 # half-duplex adapters loop the command back first
+                    os.write(self.master, (line + '\r').encode())
                 os.write(self.master, (self.reply(line) + '\r').encode())
 
 
@@ -249,3 +251,12 @@ def test_init_refusal_is_not_fatal(managed):
     sw._ensure_init(sw.settings())                                     # must not raise
     with pytest.raises(sw.MountError, match='not initialised'):        # the move then reports the real problem
         sw.goto(150)
+
+
+def test_serial_echo_is_skipped(cfg):
+    fm = SerialFakeMount()
+    fm.echo = True
+    sw.save_settings({'transport': 'serial', 'serial_port': fm.path, 'ref_bearing': 110})
+    fm.pos = 500
+    sw.calibrate(110)
+    assert sw.goto(120)['moved_deg'] == 10.0 and sw.status()['bearing'] == 120.0

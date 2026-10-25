@@ -330,13 +330,20 @@ def exchange_serial(path, line, timeout=1.0, tries=3):
             dev.reset_input_buffer()
             dev.write(msg)
             dev.flush()
-            data = dev.read_until(b'\r')
+            data = None
+            while True:                    # many adapters echo the command first: skip echo / noise until '=' or '!'
+                chunk = dev.read_until(b'\r')
+                if not chunk.endswith(b'\r'):
+                    break                  # timed out
+                if chunk.strip()[:1] in (b'=', b'!'):
+                    data = chunk
+                    break
         except (serial.SerialException, OSError, ValueError) as e:
             last = e
             _close_serial()                # unplugged / re-enumerated: open it afresh on the next try
             time.sleep(0.2)
             continue
-        if not data.endswith(b'\r'):
+        if data is None:
             last = socket.timeout()
             continue
         return _parse_reply(line, data)
