@@ -18,6 +18,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--port', default=(glob.glob('/dev/serial/by-id/usb-FTDI*') or ['/dev/ttyUSB0'])[0])
 ap.add_argument('--deg', type=float, default=3.0)
 ap.add_argument('--brake', type=float, nargs='*', default=None)
+ap.add_argument('--counts', type=int, nargs='*', default=None, help='test these exact move sizes in counts instead of --deg')
 a = ap.parse_args()
 port, deg = a.port, a.deg
 s = serial.Serial(port, 9600, timeout=1)
@@ -77,7 +78,20 @@ def run(label, d, brake):
     time.sleep(.5)
 
 
+def one(label, d, brake):
+    global inc
+    run(label, d, brake)
+
+
 try:
+  if a.counts:
+    for c in a.counts:
+        inc = c
+        brake = min(inc // 2, 721)
+        print('=== %d counts (0x%X, %.2f deg), brake %d' % (inc, inc, inc / (cpr / 360), brake))
+        run('out', 0, brake)
+        run('back', 1, brake)
+  else:
     for b in (a.brake if a.brake else [None]):
         brake = min(inc // 2, max(1, round(b * cpr / 360))) if b is not None else round(inc / 10)
         run('%g deg out' % deg, 0, brake)
