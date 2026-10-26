@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rotator">
+<meta name="theme-color" content="#0f1419">
+<title>Rotator</title>
+<style>
+:root{--bg:#0f1419;--card:#1a222c;--fg:#eef2f6;--mut:#8a98a8;--acc:#3b9eff;--ok:#2ecc71;--warn:#f5a623;--bad:#e5484d;--line:#2a3542}
+@media (prefers-color-scheme: light){:root{--bg:#f3f5f8;--card:#fff;--fg:#10161d;--mut:#5b6877;--line:#d5dce4;--acc:#0a6fd6}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.3 -apple-system,system-ui,sans-serif;overscroll-behavior:none}
+body{padding:calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 96px)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px;font-weight:600}
+button,input{font:inherit;color:inherit}
+button{min-height:52px;border-radius:12px;border:1px solid var(--line);background:var(--bg);font-weight:600;font-size:18px;touch-action:manipulation}
+button:active{background:var(--acc);color:#fff}
+button:disabled{opacity:.4}
+input{width:100%;min-height:52px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:0 12px;font-size:22px;text-align:center}
+.top{display:flex;align-items:center;gap:14px}
+#dial{width:150px;height:150px;flex:none}
+#az{font-size:56px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+#az small{font-size:24px;color:var(--mut);font-weight:500}
+#state{font-size:15px;margin-top:6px;font-weight:600}
+.s-ok{color:var(--ok)}.s-mov{color:var(--warn)}.s-bad{color:var(--bad)}.s-off{color:var(--mut)}
+#sub{font-size:13px;color:var(--mut);margin-top:2px}
+.grid{display:grid;gap:8px}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:1fr 1fr}
+.row{display:flex;gap:8px}
+.row>input{flex:1}.row>button{flex:none;width:96px}
+.lbl{font-size:13px;color:var(--mut);margin:0 0 4px}
+#msg{min-height:20px;font-size:14px;margin:2px 2px 10px;word-break:break-word}
+#stop{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);min-height:68px;font-size:26px;letter-spacing:.06em;background:var(--bad);border-color:var(--bad);color:#fff;z-index:5}
+#stop:active{background:#a8282c}
+.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.hide{display:none}
+details summary{min-height:44px;display:flex;align-items:center;color:var(--mut);font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="card top">
+  <svg id="dial" viewBox="-100 -100 200 200" aria-label="compass">
+    <circle r="92" fill="none" stroke="var(--line)" stroke-width="3"/>
+    <g stroke="var(--mut)" stroke-width="2"><path d="M0-92v10M0 92v-10M-92 0h10M92 0h-10"/></g>
+    <g fill="var(--mut)" font-size="16" font-weight="700" text-anchor="middle">
+      <text y="-66">N</text><text y="78">S</text><text x="68" y="6">E</text><text x="-68" y="6">W</text></g>
+    <g id="needle" style="transition:transform .6s ease">
+      <path d="M0-80L9 6H-9Z" fill="var(--acc)"/><path d="M0 70L6 6H-6Z" fill="var(--mut)" opacity=".5"/>
+      <circle r="6" fill="var(--fg)"/></g>
+  </svg>
+  <div>
+    <div id="az">--<small>°</small></div>
+    <div id="state" class="s-off">Connecting…</div>
+    <div id="sub"></div>
+  </div>
+</div>
+
+<div id="msg"></div>
+
+<div class="card">
+  <h2>Turn (° east +, west −)</h2>
+  <div class="grid g3">
+    <button data-n="-15">−15</button><button data-n="-5">−5</button><button data-n="-1">−1</button>
+    <button data-n="1">+1</button><button data-n="5">+5</button><button data-n="15">+15</button>
+  </div>
+  <div class="grid g3" style="margin-top:8px">
+    <button data-n="-0.5">−0.5</button><button data-n="0.5">+0.5</button><button data-n="45">+45</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Go to bearing (° true)</h2>
+  <div class="row"><input id="goto" type="number" inputmode="decimal" min="0" max="360" step="0.1" placeholder="e.g. 245">
+  <button id="go" class="primary">Go</button></div>
+  <div class="grid g2" style="margin-top:8px">
+    <button data-az="0">N 0</button><button data-az="90">E 90</button>
+    <button data-az="180">S 180</button><button data-az="270">W 270</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Calibrate</h2>
+  <p class="lbl">Antenna is physically pointing at (° true), e.g. from a compass or a known landmark:</p>
+  <div class="row"><input id="cal" type="number" inputmode="decimal" min="0" max="360" step="0.1" placeholder="e.g. 180">
+  <button id="setcal">Set</button></div>
+  <button id="restore" class="hide" style="width:100%;margin-top:8px">Restore last pointing</button>
+  <p class="lbl" id="calnote" style="margin:8px 0 0"></p>
+</div>
+
+<button id="stop">STOP</button>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let moving = false, timer = null, busy = false, lastBearing = null;
+
+  function msg(t, cls){ const m = $('msg'); m.textContent = t || ''; m.className = cls || ''; }
+  function api(url, body){
+    const opt = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+    return fetch(url, opt).then(r => r.json());
+  }
+
+  function render(d){
+    const s = $('state');
+    if (!d || d.ok === false){ s.textContent = (d && d.error) || 'No answer from the bridge'; s.className = 's-bad'; return; }
+    moving = !!d.moving;
+    const b = d.bearing;
+    if (b != null){
+      $('az').innerHTML = b.toFixed(1) + '<small>°</small>';
+      // turn the needle by the shortest way so it never spins the long way round
+      if (lastBearing == null) lastBearing = b;
+      const diff = ((b - lastBearing + 540) % 360) - 180;
+      lastBearing = lastBearing + diff;
+      $('needle').style.transform = 'rotate(' + lastBearing + 'deg)';
+    } else { $('az').innerHTML = '--<small>°</small>'; }
+    let txt, cls;
+    if (d.power_cycled){ txt = 'Power-cycled: pointing lost'; cls = 's-bad'; }
+    else if (d.asleep){ txt = 'Mount off (wakes on move)'; cls = 's-off'; }
+    else if (!d.reachable){ txt = d.message || 'Mount unreachable'; cls = 's-bad'; }
+    else if (!d.calibrated){ txt = 'Not calibrated'; cls = 's-bad'; }
+    else if (moving){ txt = 'Turning…'; cls = 's-mov'; }
+    else { txt = 'Stopped'; cls = 's-ok'; }
+    s.textContent = txt; s.className = cls;
+    const sub = [];
+    if (d.travel_left != null) sub.push('Travel left ' + d.travel_left.toFixed(0) + '°');
+    if (d.power) sub.push('socket ' + d.power);
+    $('sub').textContent = sub.join(' · ');
+    $('restore').classList.toggle('hide', !d.power_cycled);
+    const tl = d.travel_left;
+    $('calnote').textContent = tl != null && tl < 20 ? 'Warning: close to the cable travel limit.' : '';
+    if (d.fault) msg('Fault: ' + d.fault, 's-bad');
+  }
+
+  function poll(){
+    clearTimeout(timer);
+    if (document.hidden){ timer = setTimeout(poll, 3000); return; }
+    api('/api/mount').then(render).catch(() => render({ok: false, error: 'Bridge not reachable'}))
+      .finally(() => { timer = setTimeout(poll, moving || busy ? 1000 : 4000); });
+  }
+
+  function act(url, body, okMsg){
+    busy = true; msg('Sending…');
+    return api(url, body).then(d => {
+      if (d.ok === false) msg(d.error, 's-bad'); else msg(d.detail || okMsg || 'OK', 's-ok');
+      render(d);
+    }).catch(() => msg('Bridge not reachable', 's-bad')).finally(() => { busy = false; poll(); });
+  }
+
+  document.querySelectorAll('[data-n]').forEach(b => b.onclick = () => act('/api/mount/nudge', {delta: parseFloat(b.dataset.n)}));
+  document.querySelectorAll('[data-az]').forEach(b => b.onclick = () => {
+    if (confirm('Slew to ' + b.dataset.az + '°?')) act('/api/mount/goto', {azimuth: parseFloat(b.dataset.az)});
+  });
+  $('go').onclick = () => {
+    const v = parseFloat($('goto').value);
+    if (isNaN(v)) return msg('Enter a bearing 0–360', 's-bad');
+    act('/api/mount/goto', {azimuth: v});
+  };
+  $('setcal').onclick = () => {
+    const v = parseFloat($('cal').value);
+    if (isNaN(v)) return msg('Enter the bearing the antenna points at', 's-bad');
+    if (confirm('Record that the antenna points at ' + v + '° true right now?\n\nIf this is wrong every later bearing will be wrong.'))
+      act('/api/mount/calibrate', {bearing: v});
+  };
+  $('restore').onclick = () => {
+    if (confirm('Assume the antenna has NOT moved since the mount lost power and re-pair it with its last bearing?'))
+      act('/api/mount/restore', {});
+  };
+  $('stop').onclick = () => { busy = true; api('/api/mount/stop', {}).then(d => { msg(d.error || d.detail || 'Stopped', d.ok === false ? 's-bad' : 's-ok'); render(d); }).catch(() => msg('STOP not delivered: bridge unreachable', 's-bad')).finally(() => { busy = false; poll(); }); };
+
+  // keep the screen awake while on the roof
+  async function wake(){ try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {} }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden){ wake(); poll(); } });
+  wake(); poll();
+})();
+</script>
+</body>
+</html>

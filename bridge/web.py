@@ -279,6 +279,27 @@ def api_mount_nudge():
     return _guard(lambda: _mount_call(lambda: skywatcher.nudge(d.get("delta"))))
 
 
+@app.route("/rotator")
+def rotator_page():
+    """Phone-sized control page for the mount (jog, goto, set pointing, stop)."""
+    return render_template("rotator.html")
+
+
+@app.route("/api/mount/goto", methods=["POST"])
+def api_mount_goto():
+    d = request.get_json(silent=True) or {}
+
+    def go():
+        try:
+            az = float(d.get("azimuth"))
+        except (TypeError, ValueError):
+            raise skywatcher.MountError("enter a bearing from 0 to 360")
+        if not 0 <= az <= 360:
+            raise skywatcher.MountError("bearing must be between 0 and 360")
+        return skywatcher.goto(az)
+    return _guard(lambda: _mount_call(go))
+
+
 @app.route("/api/mount/stop", methods=["POST"])
 def api_mount_stop():
     return _guard(lambda: _mount_call(skywatcher.stop))

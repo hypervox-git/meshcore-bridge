@@ -277,3 +277,21 @@ def test_guard_clean_move_has_no_fault_and_saves_pointing(mount):
     mount.script_on_go = []
     sw.goto(131)                                                           # next move clears / starts clean
     assert sw.status()['fault'] is None
+
+
+def test_rotator_page_and_goto_route(mount):
+    from bridge import web  # noqa: F401
+    from bridge.extensions import app
+    c = app.test_client()
+    page = c.get('/rotator')
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200 and 'id="stop"' in html and 'viewport-fit=cover' in html
+    for url in ('/api/mount/goto', '/api/mount/nudge', '/api/mount/calibrate', '/api/mount/restore', '/api/mount/stop'):
+        assert url in html
+    r = c.post('/api/mount/goto', json={'azimuth': 120}).get_json()
+    assert r['ok'] is False and 'calibrated' in r['error']
+    assert c.post('/api/mount/calibrate', json={'bearing': 95}).get_json()['ok']
+    r = c.post('/api/mount/goto', json={'azimuth': 120}).get_json()
+    assert r['ok'] and r['bearing'] == 120.0
+    for bad in ({}, {'azimuth': 'x'}, {'azimuth': 361}, {'azimuth': -1}):
+        assert c.post('/api/mount/goto', json=bad).get_json()['ok'] is False
