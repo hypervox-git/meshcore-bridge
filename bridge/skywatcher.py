@@ -470,6 +470,11 @@ def on_mqtt_connect():
         watch_power()
     except Exception as e:
         _log(f'[mount] power watch: {e}')
+    try:
+        from bridge import mount_ha
+        mount_ha.on_mqtt_connect()
+    except Exception as e:
+        _log(f'[mount] Home Assistant entities: {e}')
 
 
 def _set_power(s, on):
@@ -742,7 +747,17 @@ def restore(s=None):
 
 
 def status(s=None, remember=True):
-    """Settings plus a live reading (never raises): reachable, actual bearing, moving."""
+    """Settings plus a live reading (never raises): reachable, actual bearing, moving. Also mirrored to Home Assistant."""
+    out = _status(s, remember)
+    try:
+        from bridge import mount_ha
+        mount_ha.publish(out)
+    except Exception as e:                       # Home Assistant being unreachable must never break the mount
+        _log(f'[mount] Home Assistant publish: {e}')
+    return out
+
+
+def _status(s=None, remember=True):
     s = s or settings()
     out = {'ok': True, 'settings': s, 'calibrated': s.get('ref_pos') is not None, 'reachable': False, 'last': _last,
            'power': _power['state'] if _managed(s) else None, 'fault': _fault}
@@ -804,7 +819,7 @@ def start():
             try:
                 s = settings()
                 if _target(s):
-                    sync_model()
+                    sync_model(status())
                     idle_check()           # managed power: switch the socket off once the mount has been idle
                     if _link['up'] is False:
                         wait = DOWN_POLL_S

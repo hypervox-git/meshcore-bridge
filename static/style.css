@@ -220,11 +220,72 @@
 .test-grid #rep-card{grid-column:1/-1}
 .test-group .warning-box{margin-bottom:.8rem}
 
-/* Mount slewing banner over the map */
-#page-map{position:relative}
-.mount-slew{position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:1200;pointer-events:none;text-align:center;
-  background:rgba(10,12,15,.88);border:2px solid var(--danger);border-radius:6px;padding:.55rem 1.4rem;color:var(--danger);
-  font-family:'Share Tech Mono','JetBrains Mono',monospace;animation:msflash .8s steps(1,end) infinite}
-.mount-slew .ms-title{font-size:20px;font-weight:700;letter-spacing:.12em;white-space:nowrap}
-.mount-slew .ms-az{font-size:16px;margin-top:2px}
-@keyframes msflash{0%{opacity:1}50%{opacity:.2}100%{opacity:1}}
+/* ---- Mount turning strip: under the nav, on every tab, with a Stop button ---- */
+.mount-slew{flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:.9rem;padding:.35rem .75rem;
+  background:rgba(255,59,59,.14);border-bottom:2px solid var(--danger);color:var(--danger);
+  font-family:'Share Tech Mono','JetBrains Mono',monospace;animation:msflash 1s steps(1,end) infinite}
+.mount-slew .ms-title{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.mount-slew .ms-az{font-size:13px}
+@keyframes msflash{0%{opacity:1}50%{opacity:.55}100%{opacity:1}}
+
+/* ---- small shared bits ---- */
+.btn-sm{font-size:10px;padding:4px 10px}
+.dot.idle{background:var(--text-muted);animation:none}
+.dot.warn{background:var(--warn)}
+.dim{color:var(--text-muted)}
+.chip{cursor:pointer;padding:2px 8px;border:1px solid var(--border);border-radius:10px;color:var(--text)}
+.chip:hover{border-color:var(--accent)}
+.stat-link{cursor:pointer}
+@media(min-width:600px){.stats{grid-template-columns:repeat(5,1fr)}}
+
+/* ---- System sub-navigation (Packet log / MQTT monitor / API) ---- */
+.subnav{display:flex;gap:.5rem;padding:.5rem .75rem;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;overflow-x:auto}
+.subnav a{padding:5px 12px;border:1px solid var(--border);border-radius:3px;color:var(--text-muted);font-size:11px;letter-spacing:.06em;cursor:pointer;white-space:nowrap}
+.subnav a.active{color:var(--accent);border-color:var(--accent)}
+
+/* ---- Antenna page: live control on top, set-up folded below ---- */
+.antenna-page{max-width:760px;margin:0 auto}
+.hero{border-color:var(--accent)}
+.hero-top{display:flex;align-items:center;gap:1rem;margin-bottom:.6rem}
+#rot-dial{width:130px;height:130px;flex:none}
+.rot-az{font-family:'Share Tech Mono',monospace;font-size:46px;font-weight:700;color:var(--accent);line-height:1}
+.rot-az small{font-size:20px;color:var(--text-muted);font-weight:400}
+.rot-state{font-size:13px;font-weight:700;margin-top:.3rem}
+.hero-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin:.8rem 0 .35rem}
+.hero-grid{display:grid;gap:.4rem}
+.hero-grid.g6{grid-template-columns:repeat(6,1fr)}
+.hero-row{display:flex;gap:.5rem;align-items:center}
+.hero-row .config-num{flex:1;min-width:0;font-size:16px;padding:9px 10px}
+.hero-row .btn{min-width:96px}
+.hero .btn{min-height:44px}
+.hero-end{margin-top:.9rem}
+.hero-stop{flex:1;min-height:52px;font-size:16px;font-weight:700;letter-spacing:.1em;background:rgba(255,59,59,.12)}
+.hero .btn:disabled{opacity:.35;cursor:not-allowed}
+.fold{margin-bottom:.8rem}
+.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;min-height:44px;padding:.7rem 1rem;
+  background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text)}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:'\25B8';color:var(--accent);transition:transform .15s}
+.fold[open]>summary::before{transform:rotate(90deg)}
+.fold[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent}
+.fold-hint{font-size:10px;letter-spacing:0;text-transform:none;color:var(--text-muted)}
+.fold>.config-section{margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0}
+.fold>.config-section>.config-title{display:none}      /* the summary is the title */
+
+/* ---- narrow screens (phone, HA mobile app, HA iframe cards) ---- */
+@media(max-width:700px){
+  .config-page{padding:.6rem}
+  .config-row{flex-direction:column;align-items:stretch;gap:.3rem}
+  .config-label{min-width:0}
+  .config-num,.config-select{width:100% !important;min-width:0;font-size:16px;padding:9px 10px}
+  .config-actions{flex-wrap:wrap}
+  .config-actions .btn{flex:1 1 auto;min-height:44px}
+  .btn{min-height:40px}
+  .btn-sm{min-height:34px}
+  input,select{font-size:16px}                 /* stops iOS zooming the page when a field is focused */
+  .rot-az{font-size:40px}
+  #rot-dial{width:104px;height:104px}
+  .hero-grid.g6{grid-template-columns:repeat(3,1fr)}
+  .status-bar{gap:.5rem}
+  .test-grid .tm-chart{height:180px}
+}

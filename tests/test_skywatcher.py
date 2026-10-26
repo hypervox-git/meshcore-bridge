@@ -295,3 +295,86 @@ def test_rotator_page_and_goto_route(mount):
     assert r['ok'] and r['bearing'] == 120.0
     for bad in ({}, {'azimuth': 'x'}, {'azimuth': 361}, {'azimuth': -1}):
         assert c.post('/api/mount/goto', json=bad).get_json()['ok'] is False
+
+
+class _HAClient:
+    """Fake paho client: records publishes, subscriptions and callbacks."""
+    def __init__(self):
+        self.sent, self.subs, self.cb = [], [], {}
+
+    def publish(self, topic, payload=None, qos=0, retain=False):
+        self.sent.append((topic, payload, retain))
+
+    def subscribe(self, t, qos=0): self.subs.append(t)
+    def message_callback_add(self, t, f): self.cb[t] = f
+
+
+@pytest.fixture
+def ha(mount, monkeypatch):
+    from bridge import mount_ha
+    c = _HAClient()
+    monkeypatch.setattr(sw, '_mqtt', lambda: c)
+    monkeypatch.setattr(state, 'mqtt_connected', True)
+    monkeypatch.setattr(mount_ha, 'MIN_GAP_S', 0)
+    monkeypatch.setattr(mount_ha, '_run', lambda fn, what: fn(sw))          # commands run inline in tests
+    mount_ha._last.update(payload=None, ts=0.0)
+    return c
+
+
+def _msg(payload):
+    import types
+    return types.SimpleNamespace(payload=str(payload).encode())
+
+
+def test_ha_discovery_and_subscriptions(ha):
+    import json
+    from bridge import mount_ha
+    mount_ha.on_mqtt_connect()
+    topics = {t for t, _p, _r in ha.sent}
+    for obj in ('sensor/meshcore_mount_bearing', 'sensor/meshcore_mount_state', 'sensor/meshcore_mount_travel_left',
+                'binary_sensor/meshcore_mount_moving', 'number/meshcore_mount_goto', 'button/meshcore_mount_stop',
+                'button/meshcore_mount_nudge_m5', 'button/meshcore_mount_nudge_p1'):
+        assert 'homeassistant/' + obj + '/config' in topics
+    assert all(r for _t, _p, r in ha.sent)                                   # discovery is retained
+    cfg = json.loads(next(p for t, p, _r in ha.sent if t.endswith('meshcore_mount_goto/config')))
+    assert cfg['command_topic'] == mount_ha.ROOT + '/goto' and cfg['min'] == 0 and cfg['max'] == 360
+    assert sorted(ha.subs) == sorted(mount_ha.ROOT + '/' + n for n in ('goto', 'nudge', 'stop'))
+
+
+def test_ha_state_published_on_change(ha):
+    import json
+    from bridge import mount_ha
+    sw.status()
+    assert json.loads(ha.sent[-1][1])['state'] == 'not calibrated' and ha.sent[-1][2] is True
+    sw.calibrate(95)
+    sw.status()
+    v = json.loads(ha.sent[-1][1])
+    assert v['state'] == 'stopped' and v['bearing'] == 95.0 and v['moving'] is False and v['travel_left'] == 180.0
+    n = len(ha.sent)
+    sw.status()                                                              # unchanged: nothing new inside the refresh window
+    assert len(ha.sent) == n
+    assert mount_ha.view({'message': 'mount address not set'}) is None
+
+
+def test_ha_commands_move_the_mount(ha):
+    import json
+    from bridge import mount_ha
+    mount_ha.on_mqtt_connect()
+    sw.calibrate(95)
+    ha.cb[mount_ha.ROOT + '/goto'](None, None, _msg('120'))
+    assert sw.status()['bearing'] == 120.0
+    ha.cb[mount_ha.ROOT + '/nudge'](None, None, _msg('-5'))
+    assert sw.status()['bearing'] == 115.0
+    ha.cb[mount_ha.ROOT + '/stop'](None, None, _msg('STOP'))
+    assert json.loads(ha.sent[-1][1])['bearing'] == 115.0
+    before = sw.status()['bearing']
+    for bad in ('x', '361', '-1', ''):                                       # rejected without touching the mount
+        ha.cb[mount_ha.ROOT + '/goto'](None, None, _msg(bad))
+    ha.cb[mount_ha.ROOT + '/nudge'](None, None, _msg('120'))
+    assert sw.status()['bearing'] == before
+
+
+def test_ha_publish_failure_never_breaks_status(ha, monkeypatch):
+    def boom(*a, **k): raise RuntimeError('broker gone')
+    monkeypatch.setattr(ha, 'publish', boom)
+    assert sw.status()['ok'] is True

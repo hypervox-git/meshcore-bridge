@@ -35,7 +35,7 @@ function loadTargets(){
     orig(name);
     try { history.replaceState(null, '', '#' + name); } catch (e) {}       // a reload (or a bookmark) reopens the same tab
     if (name === 'test' || name === 'neighbors') loadTargets();
-    if (name === 'test') testNav();
+    if (name === 'antenna') mountLoad(true);
   };
 })();
 
@@ -140,7 +140,7 @@ nbtLoad();
 setInterval(() => nbtRender(), 30000);        // keep the ages moving
 
 function jumpToTest(id){
-  showPage('test'); testTab('run');
+  showPage('test');
   setTimeout(() => {
     const sel = document.getElementById('lt-target'); if (sel && Array.from(sel.options).some(o => o.value === id)) sel.value = id;
     const tr = document.getElementById('tr-target'); if (tr) tr.value = id;
@@ -352,11 +352,12 @@ fetch('/api/test/status').then(r => r.json()).then(s => {
   }
 }).catch(() => {});
 
-// Deep links (/#test, /#neighbors, /#map, /#log, ...) so other pages - e.g. the Home
+// Deep links (/#antenna, /#test, /#neighbors, /#map, /#log, ...) so other pages - e.g. the Home
 // Assistant dashboard iframes - can open the bridge straight on a tab.
 (function deepLinks(){
   const go = () => {
-    const p = (location.hash || '').replace('#', '');
+    let p = (location.hash || '').replace('#', '');
+    p = {steer: 'antenna', aim: 'antenna', run: 'test', system: sysPage()}[p] || p;      // old / grouped names
     if (p && document.getElementById('page-' + p)) showPage(p);
   };
   window.addEventListener('hashchange', go);
@@ -906,6 +907,7 @@ function mountFill(d, keepForm){
   window.mountCfg = {host: configured, calibrated: !!d.calibrated, moving: !!d.moving};
   mountBanner(d);
   mountFollow(d);
+  try { rotFill(d); mountChip(d); } catch (e) {}
 }
 // The ghost / beam on the map follows where the antenna REALLY points (read back from the mount).
 function mountFollow(d){
@@ -922,13 +924,14 @@ function mountFollow(d){
   if (src && a && a.directional) src.textContent = 'Current: ' + a.type + ' ' + a.gain_dbi + ' dBi aimed at ' + d.bearing + '\u00b0 true (read from the mount), F/B ' + a.front_back_db + ' dB';
 }
 function mountLoad(keepForm){ return fetch('/api/mount').then(r => r.json()).then(d => { if (d.ok) mountFill(d, keepForm); }).catch(() => {}); }
+function mtStatus(msg, type){ setStatus('mt-status', msg, type); setStatus('rot-status', msg, type); }
 function mountCall(url, body, okMsg){
   window.mountBoost = Date.now() + 25000;                 // poll fast while the mount turns
-  setStatus('mt-status', 'Working...', 'ok');
+  mtStatus('Working...', 'ok');
   return post(url, body).then(d => {
-    if (!d.ok) { setStatus('mt-status', d.error, 'err'); return; }
-    setStatus('mt-status', d.detail || okMsg || 'Done', 'ok'); mountFill(d, true); if (window.mountKick) window.mountKick();
-  }).catch(e => setStatus('mt-status', 'Error: ' + e, 'err'));
+    if (!d.ok) { mtStatus(d.error, 'err'); return; }
+    mtStatus(d.detail || okMsg || 'Done', 'ok'); mountFill(d, true); if (window.mountKick) window.mountKick();
+  }).catch(e => mtStatus('Error: ' + e, 'err'));
 }
 function mountSave(){ return mountCall('/api/mount/settings', mountForm(), 'Saved'); }
 function mountCalibrate(){
@@ -943,6 +946,76 @@ function mountRestore(){
   if (!confirm('Assume the antenna has NOT moved since the mount was switched off, and re-pair it with its last bearing?')) return;
   return mountCall('/api/mount/restore', {});
 }
+// ---- Antenna page hero card + the always-visible header chip --------------------------------------------
+// One place decides what the mount is "doing" so every view says the same thing.
+function mountView(d){
+  const s = d.settings || {};
+  const configured = s.transport === 'serial' ? !!s.serial_port : !!s.host;
+  let txt, cls, chip;
+  if (!configured){ txt = 'Mount not set up'; cls = 'bad'; chip = 'not set up'; }
+  else if (d.power_cycled){ txt = 'Power-cycled: pointing lost'; cls = 'bad'; chip = 'pointing lost'; }
+  else if (d.asleep){ txt = 'Mount off (wakes when you move it)'; cls = 'dim'; chip = 'off'; }
+  else if (!d.reachable){ txt = 'Mount unreachable'; cls = 'bad'; chip = 'unreachable'; }
+  else if (!d.calibrated){ txt = 'Not calibrated'; cls = 'bad'; chip = 'not calibrated'; }
+  else if (d.moving){ txt = 'Turning...'; cls = 'warn-text'; chip = 'turning'; }
+  else { txt = 'Stopped'; cls = 'good'; chip = 'stopped'; }
+  return {configured, txt, cls, chip};
+}
+function rotFill(d){
+  const $ = id => document.getElementById(id); if (!$('rot-card')) return;
+  const m = mountView(d);
+  if (d.bearing != null){
+    $('rot-az').innerHTML = d.bearing.toFixed(1) + '<small>&deg;</small>';
+    let a = window.rotAngle == null ? d.bearing : window.rotAngle;                // turn the needle the short way round
+    a += ((d.bearing - a + 540) % 360) - 180;
+    window.rotAngle = a; $('rot-needle').style.transform = 'rotate(' + a + 'deg)';
+  } else $('rot-az').innerHTML = '--<small>&deg;</small>';
+  $('rot-state').textContent = m.txt; $('rot-state').className = 'rot-state ' + m.cls;
+  const sub = [];
+  if (d.travel_left != null) sub.push(d.travel_left.toFixed(0) + '° of cable travel left');
+  if (d.power) sub.push('socket ' + d.power);
+  if (d.link && d.link.up === false && d.link.down_at) sub.push('link down since ' + new Date(d.link.down_at * 1000).toLocaleTimeString('en-GB', {hour12: false}));
+  $('rot-sub').textContent = sub.join(' · ');
+  const can = m.configured && d.calibrated && !d.moving && !d.power_cycled && (d.asleep || d.reachable);
+  document.querySelectorAll('#rot-card .rot-act').forEach(b => b.disabled = !can);
+  document.querySelectorAll('#rot-card .rot-cal').forEach(b => b.disabled = !m.configured || !!d.moving);
+  $('rot-restore').style.display = d.power_cycled ? '' : 'none';
+  $('rot-note').textContent = !m.configured ? 'Open "Mount set-up" below and enter the connection, then Save.'
+    : d.power_cycled ? 'The mount lost its position. If the antenna has not been moved, press Restore last pointing; otherwise set the pointing below.'
+    : !d.calibrated && d.reachable ? 'Type the bearing the antenna points at now and press Set pointing before turning it.'
+    : d.moving ? 'Turning - controls unlock when it has stopped. STOP is always available.'
+    : (d.fault ? 'STOPPED: ' + d.fault.msg : '');
+}
+function mountChip(d){
+  const $ = id => document.getElementById(id), m = mountView(d);
+  const dot = $('mount-dot'), txt = $('mount-chip-text'); if (!dot || !txt) return;
+  const b = d.bearing != null ? d.bearing.toFixed(0) + '° ' : '';
+  txt.textContent = 'Mount ' + b + m.chip;
+  dot.className = 'dot ' + (m.cls === 'good' ? '' : m.cls === 'warn-text' ? 'warn' : m.cls === 'bad' ? 'offline' : 'idle');
+  const st = $('stat-ant'); if (st) st.textContent = d.bearing != null ? d.bearing.toFixed(0) + '°' : '-';
+}
+function rotNum(id){ const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? null : v; }
+function rotTurn(deg){ return mountCall('/api/mount/nudge', {delta: deg}); }
+function rotGoto(){
+  const v = rotNum('rot-goto');
+  if (v === null || v < 0 || v > 360){ mtStatus('Enter a bearing from 0 to 360', 'err'); return; }
+  return mountCall('/api/mount/goto', {azimuth: v});
+}
+function rotCalibrate(){
+  const v = rotNum('rot-cal');
+  if (v === null || v < 0 || v > 360){ mtStatus('Enter the bearing the antenna points at (0-360)', 'err'); return; }
+  if (!confirm('Record that the antenna points at ' + v + '° true right now?\n\nIf this is wrong every later bearing will be wrong.')) return;
+  return mountCall('/api/mount/calibrate', {bearing: v});
+}
+// folds remember whether they were open; charts inside need a resize once they become visible
+document.querySelectorAll('details.fold').forEach(f => {
+  try { if (localStorage.getItem('fold-' + f.id) === '1') f.open = true; } catch (e) {}
+  f.addEventListener('toggle', () => {
+    try { localStorage.setItem('fold-' + f.id, f.open ? '1' : '0'); } catch (e) {}
+    window.dispatchEvent(new Event('resize'));
+  });
+});
+
 mountLoad(false);
 (function mountPollLoop(){
   let timer = null;
@@ -1013,16 +1086,6 @@ socket.on('mqtt_monitor', d => { d.suggestions = d.suggestions || (mqState && mq
 document.getElementById('mq-filter').addEventListener('input', e => { e.target.dataset.touched = '1';
   if (mqState) document.getElementById('mq-sub').disabled = !!(mqState.subscribed && mqState.active_filter === e.target.value.trim()); });
 mqLoad();
-
-// ---- Test page: three steps (Antenna & aim -> Steering & mount -> Run tests), one shown at a time ----
-function testTab(name){
-  if (!document.getElementById('tg-' + name)) name = 'antenna';
-  document.querySelectorAll('#page-test .test-group').forEach(g => g.classList.toggle('active', g.id === 'tg-' + name));
-  document.querySelectorAll('#test-tabs .subtab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  try { localStorage.setItem('testTab', name); } catch (e) {}
-  window.dispatchEvent(new Event('resize'));          // let charts size themselves once visible
-}
-function testNav(){ let t = null; try { t = localStorage.getItem('testTab'); } catch (e) {} testTab(t || 'antenna'); }
 
 // ---- base-station picker on the Map page (every repeater within ALWAYS km is listed, nearest first) ----
 function simPickFill(d){

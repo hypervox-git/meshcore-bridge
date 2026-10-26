@@ -103,9 +103,14 @@ socket.on('nodedb_flushed',()=>{
   renderNodes();
 });
 
+const SYSTEM_PAGES=['log','mqtt','apidocs'];                  // grouped under one "System" tab
+function sysPage(){let p=null;try{p=localStorage.getItem('sysPage');}catch(e){}return SYSTEM_PAGES.includes(p)?p:'log';}
 function showPage(name){
   activePage=name;
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.toggle('active',t.dataset.page===name));
+  const tab=SYSTEM_PAGES.includes(name)?'system':name;
+  if(tab==='system'){try{localStorage.setItem('sysPage',name);}catch(e){}}
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.toggle('active',t.dataset.page===tab));
+  document.querySelectorAll('.subnav a').forEach(t=>t.classList.toggle('active',t.dataset.page===name));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const page=document.getElementById('page-'+name);if(page) page.classList.add('active');
   const m=name.match(/^ch-(\d+)$/);if(m){clearUnread(parseInt(m[1]));scrollChat(parseInt(m[1]));}
@@ -627,6 +632,8 @@ const API_ENDPOINTS=[
   {method:'POST',path:'/api/mount/settings',desc:'Save mount settings. Body: {host, port, ref_bearing, travel_deg, brake_deg, invert}'},
   {method:'POST',path:'/api/mount/calibrate',desc:'Record the bearing the antenna points at now. Body: {settings?}'},
   {method:'POST',path:'/api/mount/nudge',desc:'Turn the antenna by a few degrees. Body: {delta}'},
+  {method:'POST',path:'/api/mount/goto',desc:'Slew the antenna to a bearing. Body: {azimuth} 0-360'},
+  {method:'GET',path:'/rotator',desc:'Phone-sized rotator page (jog, go to, set pointing, stop)'},
   {method:'POST',path:'/api/mount/restore',desc:'After a mount power cycle: re-pair it with its last known bearing'},
   {method:'POST',path:'/api/mount/stop',desc:'Stop the mount'},
   {method:'GET',path:'/api/nbtable',desc:'Persistent neighbour table (public-database repeaters + heard/discovered state, range, bearing)'},

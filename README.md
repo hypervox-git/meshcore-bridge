@@ -14,12 +14,17 @@ event-to-UI field mapping on your device (see "Bring-up").
 
 | Tab | What it does |
 |---|---|
-| Dashboard | Live stats, zoomable node map, node list; **Update neighbour table** button |
+| Dashboard | Live stats (incl. antenna bearing), zoomable node map, node list; **Update neighbour table** button |
 | Map | Public repeaters and simulated links, antenna beam and ghost patterns, steer from a repeater's popup |
+| Antenna | **Live rotator control first** (bearing, turn, go to, set pointing, STOP); antenna, planner, steering and mount set-up in folding sections below |
 | Neighbours | Discover table and the persistent neighbour table (public database + heard state) |
-| Test | Antenna, steering, Sky-Watcher mount, site planner, repeater/link tests (quick-jump bar at the top) |
-| MQTT | Raw MQTT messages under the bridge topic, Subscribe / Unsubscribe |
-| Log / API | Packet log with CSV export; REST endpoint list |
+| Link test | Local repeater (serial), live link test (RSSI / noise floor), traceroute |
+| System | Packet log (CSV export), MQTT monitor, REST endpoint list |
+
+The header always shows the radio, MQTT and **mount** state (tap the mount chip for the controls). While the mount is turning, a
+red strip with a **Stop** button appears under the tabs on every page.
+
+A separate phone-sized page, `/rotator`, has only the rotator controls (big buttons, live bearing, STOP).
 
 The page you are on is kept in the URL (`/#mqtt`, `/#test`, ...), so a reload or a bookmark reopens it.
 
@@ -92,7 +97,8 @@ Two new dashboard tabs (backend in `bridge/testmode.py`, duty-cycle maths in
   resolved against your repeater contacts; 1-byte hash collisions pick the nearest
   candidate and are flagged in the popup.
 
-Tabs can be deep-linked, e.g. `http://<bridge-host>:5001/#test`, `/#neighbors`, `/#map`.
+Tabs can be deep-linked, e.g. `http://<bridge-host>:5001/#antenna`, `/#test`, `/#neighbors`, `/#map`, `/#log`, `/#mqtt`.
+(The old `/#steer` and `/#run` links open Antenna and Link test.)
 
 ### Home Assistant dashboard
 
@@ -122,6 +128,20 @@ Browsers block a plain-`http://` iframe inside an `https://` page, so this works
 Home Assistant is opened over local `http://`; for an HTTPS front end, proxy the bridge
 behind the same TLS origin. The traceroute's "Show on map" switches to the bridge's own
 Map tab inside the embed - Home Assistant's native map cannot draw the path.
+
+#### Antenna rotator in Home Assistant
+
+Two ways, which can be combined:
+
+1. **Native entities (works anywhere, also over HTTPS / the mobile app).** With `HA_DISCOVERY = True` the bridge publishes an
+   **Antenna rotator** device through MQTT discovery: sensors *Bearing*, *Travel left*, *State*, binary sensor *Turning*, a
+   *Go to bearing* number, and buttons *Stop* and *Turn -5 / -1 / +1 / +5*. State is retained on `<MQTT_TOPIC>/mount/state`;
+   commands go to `<MQTT_TOPIC>/mount/goto` (0-360), `/nudge` (-90..90) and `/stop`. They are validated and run through the same
+   code, travel limit and move guard as the web page.
+2. **The full UI in an iframe** (plain `http://` only, see above): an `iframe` card for `http://<bridge-ip>:5001/#antenna`
+   (desktop) and `http://<bridge-ip>:5001/rotator` (phone). Use the bridge's IP address rather than its hostname.
+
+Anyone who can publish to those MQTT topics can move the antenna: keep the broker private, as for the rest of the bridge.
 
 ### Repeater mode (no companion node)
 

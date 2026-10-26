@@ -17,6 +17,7 @@
     <div class="status-bar">
       <div class="si"><div class="dot" id="serial-dot"></div><span id="serial-status">Serial</span></div>
       <div class="si"><div class="dot" id="mqtt-dot"></div><span id="mqtt-status">MQTT</span></div>
+      <div class="si chip" id="mount-chip" onclick="showPage('antenna')" title="Antenna rotator - tap for controls"><div class="dot idle" id="mount-dot"></div><span id="mount-chip-text">Mount</span></div>
       <button class="hdr-btn" id="notif-btn" onclick="toggleNotif()">Notify</button>
       <button class="hdr-btn" onclick="flushNodeDb()" title="Flush stored nodes + locations">Flush DB</button>
       <span id="clock"></span>
@@ -33,12 +34,14 @@
 <nav id="main-nav">
   <div class="nav-tab active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</div>
   <div class="nav-tab" data-page="map" onclick="showPage('map')">Map</div>
+  <div class="nav-tab" data-page="antenna" onclick="showPage('antenna')">Antenna</div>
   <div class="nav-tab" data-page="neighbors" onclick="showPage('neighbors')">Neighbours</div>
-  <div class="nav-tab" data-page="test" onclick="showPage('test')">Test</div>
-  <div class="nav-tab" data-page="mqtt" onclick="showPage('mqtt')">MQTT</div>
-  <div class="nav-tab" data-page="log" onclick="showPage('log')">Log <span class="badge" id="log-count" style="margin-left:4px">0</span></div>
-  <div class="nav-tab" data-page="apidocs" onclick="showPage('apidocs')">API</div>
+  <div class="nav-tab" data-page="test" onclick="showPage('test')">Link test</div>
+  <div class="nav-tab" data-page="system" onclick="showPage(sysPage())">System <span class="badge" id="log-count" style="margin-left:4px">0</span></div>
 </nav>
+
+<!-- Mount moving: visible on every tab, with a Stop button -->
+<div id="mount-slew" class="mount-slew" style="display:none"><span class="ms-title">Mount turning</span><span class="ms-az" id="ms-az">Azimuth -</span><button class="btn btn-danger btn-sm" onclick="mountStop()">Stop</button></div>
 
 <!-- Dashboard -->
 <div class="page active" id="page-dashboard">
@@ -47,12 +50,13 @@
     <div class="stat warn"><div class="stat-label">Nodes</div><div class="stat-value" id="stat-nodes">0</div></div>
     <div class="stat info"><div class="stat-label">RSSI</div><div class="stat-value" id="stat-rssi">-</div></div>
     <div class="stat dim"><div class="stat-label">SNR</div><div class="stat-value" id="stat-snr">-</div></div>
+    <div class="stat warn stat-link" onclick="showPage('antenna')" title="Antenna bearing - tap for controls"><div class="stat-label">Antenna</div><div class="stat-value" id="stat-ant">-</div></div>
   </div>
   <div class="radar-wrap">
     <div class="radar-label" id="radar-label">Node map - waiting for data...</div>
     <svg id="radar-svg" viewBox="0 0 380 220" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="radar-hint" id="radar-hint">scroll to zoom, drag to pan</div>
-    <div class="config-actions" style="justify-content:center"><button class="btn btn-send" id="nbt-btn2" onclick="nbSync()" style="font-size:10px;padding:4px 10px">Update neighbour table from public database</button><span class="send-status" id="nbt-status2"></span></div>
+    <div class="config-actions" style="justify-content:center"><button class="btn btn-send btn-sm" id="nbt-btn2" onclick="nbSync()">Update neighbour table from public database</button><span class="send-status" id="nbt-status2"></span></div>
   </div>
   <div class="scroll-area">
     <div class="nodes-grid" id="nodes-grid"><div class="empty-state">Waiting for nodes...</div></div>
@@ -65,18 +69,18 @@
   <div id="sim-bar" class="log-toolbar" style="flex-wrap:wrap">
     <label class="tracker-chip"><input type="checkbox" id="sim-toggle" checked>Public repeaters &amp; simulated links</label>
     <select id="sim-pick" class="config-select" onchange="simPickShow()" style="max-width:300px"><option value="">Base stations...</option></select>
-    <button class="btn btn-send" onclick="simPickSteer()" style="font-size:10px;padding:4px 10px">Point antenna</button>
+    <button class="btn btn-send btn-sm" onclick="simPickSteer()">Point antenna</button>
     <span class="send-status" id="sim-info"></span>
   </div>
   <div id="leaflet-map"></div>
-  <div id="mount-slew" class="mount-slew" style="display:none"><div class="ms-title">&gt;&gt;&gt;&gt;Mount Slewing&lt;&lt;&lt;&lt;</div><div class="ms-az" id="ms-az">Azimuth -</div></div>
+
 </div>
 
 <!-- Neighbours -->
 <div class="page" id="page-neighbors">
   <div class="log-toolbar" style="flex-wrap:wrap">
-    <button class="btn btn-send" id="nb-btn" onclick="discoverNeighbors()" style="font-size:10px;padding:4px 10px">Discover</button>
-    <button class="btn btn-send" id="nbt-btn" onclick="nbSync()" style="font-size:10px;padding:4px 10px">Update from public database</button><span class="send-status" id="nbt-status"></span>
+    <button class="btn btn-send btn-sm" id="nb-btn" onclick="discoverNeighbors()">Discover</button>
+    <button class="btn btn-send btn-sm" id="nbt-btn" onclick="nbSync()">Update from public database</button><span class="send-status" id="nbt-status"></span>
     <label class="tracker-chip"><input type="checkbox" class="nb-type" value="repeater" checked>Repeaters</label>
     <label class="tracker-chip"><input type="checkbox" class="nb-type" value="room" checked>Rooms</label>
     <label class="tracker-chip"><input type="checkbox" class="nb-type" value="sensor" checked>Sensors</label>
@@ -94,16 +98,47 @@
   </div>
 </div>
 
-<!-- Test mode -->
-<div class="page" id="page-test">
-  <div class="scroll-area"><div class="config-page">
-    <div class="subtabs" id="test-tabs">
-      <button class="subtab" data-tab="antenna" onclick="testTab('antenna')"><span>1</span> Antenna &amp; aim</button>
-      <button class="subtab" data-tab="steer" onclick="testTab('steer')"><span>2</span> Steering &amp; mount</button>
-      <button class="subtab" data-tab="run" onclick="testTab('run')"><span>3</span> Run tests</button>
+<!-- Antenna: live control first, set-up folded away -->
+<div class="page" id="page-antenna">
+  <div class="scroll-area"><div class="config-page antenna-page">
+
+    <div class="config-section hero" id="rot-card">
+      <div class="hero-top">
+        <svg id="rot-dial" viewBox="-100 -100 200 200" aria-label="compass">
+          <circle r="92" fill="none" stroke="var(--border)" stroke-width="3"/>
+          <g stroke="var(--text-muted)" stroke-width="2"><path d="M0-92v10M0 92v-10M-92 0h10M92 0h-10"/></g>
+          <g fill="var(--text-muted)" font-size="16" font-weight="700" text-anchor="middle"><text y="-66">N</text><text y="78">S</text><text x="68" y="6">E</text><text x="-68" y="6">W</text></g>
+          <g id="rot-needle" style="transition:transform .6s ease"><path d="M0-80L9 6H-9Z" fill="var(--accent)"/><path d="M0 70L6 6H-6Z" fill="var(--text-muted)" opacity=".5"/><circle r="6" fill="var(--text)"/></g>
+        </svg>
+        <div class="hero-read">
+          <div class="rot-az" id="rot-az">--<small>&deg;</small></div>
+          <div class="rot-state dim" id="rot-state">Connecting...</div>
+          <div class="config-hint" id="rot-sub"></div>
+        </div>
+      </div>
+
+      <div class="hero-label">Turn (&deg;, + clockwise)</div>
+      <div class="hero-grid g6">
+        <button class="btn rot-act" onclick="rotTurn(-15)">&minus;15</button><button class="btn rot-act" onclick="rotTurn(-5)">&minus;5</button><button class="btn rot-act" onclick="rotTurn(-1)">&minus;1</button>
+        <button class="btn rot-act" onclick="rotTurn(1)">+1</button><button class="btn rot-act" onclick="rotTurn(5)">+5</button><button class="btn rot-act" onclick="rotTurn(15)">+15</button>
+      </div>
+
+      <div class="hero-label">Go to bearing (&deg; true)</div>
+      <div class="hero-row"><input id="rot-goto" type="number" inputmode="decimal" min="0" max="360" step="0.1" placeholder="e.g. 245" class="config-num">
+        <button class="btn btn-send rot-act" onclick="rotGoto()">Go</button></div>
+      <div class="config-hint">Or pick a base station on the <a href="#map" onclick="showPage('map');return false">Map</a> tab and press <b>Point antenna</b>.</div>
+
+      <div class="hero-label">Calibrate: the antenna physically points at (&deg; true)</div>
+      <div class="hero-row"><input id="rot-cal" type="number" inputmode="decimal" min="0" max="360" step="0.1" placeholder="e.g. 110" class="config-num">
+        <button class="btn btn-share rot-cal" onclick="rotCalibrate()">Set pointing</button></div>
+
+      <div class="hero-row hero-end"><button class="btn btn-danger hero-stop" onclick="mountStop()">STOP</button>
+        <button class="btn" id="rot-restore" onclick="mountRestore()" style="display:none">Restore last pointing</button></div>
+      <div class="send-status" id="rot-status"></div>
+      <div class="config-hint" id="rot-note"></div>
     </div>
-    <div class="test-group" id="tg-antenna">
-      <div class="test-grid">
+
+    <details class="fold" id="fold-aim"><summary>Antenna &amp; aim <span class="fold-hint">type, gain, beamwidth, map overlay</span></summary>
     <div class="config-section" id="ant-card">
       <div class="config-title">Antenna (our repeater)</div>
       <div class="config-hint" id="ant-src"></div>
@@ -120,7 +155,9 @@
       <div class="config-row"><span class="config-label">Beamwidth (&deg;, &minus;3 dB)<div class="config-hint">Azimuth half-power width. Leave blank to derive it from front-to-back (Moxon-style wide lobe)</div></span><input id="ant-hpbw" oninput="antGhost()" type="number" min="10" max="270" step="1" class="config-num"></div>
       <div class="config-actions"><button class="btn btn-send" onclick="antSave()">Save antenna</button><button class="btn" onclick="aimAt('reset')">Reset to config.py</button><span class="send-status" id="ant-status"></span></div>
     </div>
+    </details>
 
+    <details class="fold" id="fold-plan"><summary>Line-of-sight planner <span class="fold-hint">best azimuth over the terrain</span></summary>
     <div class="config-section" id="plan-card">
       <div class="config-title">Line of sight &amp; antenna orientation planner</div>
       <div class="config-hint">Which public repeaters Ironhorse can see over the terrain (4/3-earth, Fresnel, 90 m elevation data, assumed mast heights), and which azimuth for a directional antenna reaches the most. A planning aid &mdash; buildings and trees are not modelled.</div>
@@ -132,10 +169,9 @@
       <div id="plan-results"></div>
       <div class="tm-chart"><canvas id="plan-chart"></canvas></div>
     </div>
-      </div>
-    </div>
-    <div class="test-group" id="tg-steer">
-      <div class="test-grid">
+    </details>
+
+    <details class="fold" id="fold-steer"><summary>Steering action <span class="fold-hint">what the Steer buttons do</span></summary>
     <div class="config-section" id="steer-card">
       <div class="config-title">Antenna steering (director)</div>
       <div class="config-hint">What the <b>Steer</b> buttons do &mdash; here and in a repeater's map popup, which shows the boresight bearing from this repeater. This only <i>commands</i> a director; the real antenna position is not read back, so confirm it physically.</div>
@@ -150,7 +186,9 @@
       <div class="config-actions"><button class="btn btn-send" onclick="steerSave()">Save steering settings</button><button class="btn" onclick="steerAimField()">Steer to the Aim field now</button><span class="send-status" id="st-status"></span></div>
       <div class="config-hint" id="st-info"></div>
     </div>
+    </details>
 
+    <details class="fold" id="fold-mount"><summary>Mount set-up <span class="fold-hint">connection, power, travel limit</span></summary>
     <div class="config-section" id="mount-card">
       <div class="config-title">Sky-Watcher mount (AZ-GTI / AllView)</div>
       <div class="config-hint">Rotates the antenna when the steering action above is <b>Sky-Watcher</b>. Only the azimuth axis is used. The mount forgets its position when powered off: with <b>always on</b> power, point the antenna at a known bearing and press <b>Set current pointing</b> after every power-up; with a <b>Zigbee socket</b> the bridge switches the mount on for each move, re-pairs the position itself (the antenna cannot move while it is off) and switches it off again after the idle delay.</div>
@@ -173,9 +211,14 @@
         <span class="send-status" id="mt-status"></span></div>
       <div class="config-hint" id="mt-info"></div>
     </div>
-      </div>
-    </div>
-    <div class="test-group" id="tg-run">
+    </details>
+
+  </div></div>
+</div>
+
+<!-- Link test (was: Test) -->
+<div class="page" id="page-test">
+  <div class="scroll-area"><div class="config-page">
     <div class="warning-box">Test mode transmits. Every request is paced against the duty-cycle limit for <b>both</b> your node and the target, using only a fixed share of the legal limit. Airtime figures are conservative estimates.</div>
       <div class="test-grid">
     <div class="config-section" id="rep-card" style="display:none">
@@ -244,16 +287,16 @@
       <div class="config-hint" style="margin-top:.4rem">Map colours: SNR &ge; 5 dB green, 0&ndash;5 dB amber, &lt; 0 dB red; dashed grey = hop with no known location.</div>
     </div>
       </div>
-    </div>
   </div></div>
 </div>
 
 <!-- Log -->
+  <div class="subnav"><a data-page="log" onclick="showPage('log')">Packet log</a><a data-page="mqtt" onclick="showPage('mqtt')">MQTT monitor</a><a data-page="apidocs" onclick="showPage('apidocs')">API</a></div>
 <div class="page" id="page-log">
   <div class="log-toolbar">
-    <button class="btn" id="scroll-lock-btn" onclick="toggleScrollLock()" style="font-size:10px;padding:4px 10px">Pause</button>
-    <button class="btn" onclick="exportCSV()" style="font-size:10px;padding:4px 10px">Export CSV</button>
-    <button class="btn" id="mqtt-view-btn" onclick="toggleMqttView()" style="font-size:10px;padding:4px 10px">MQTT</button>
+    <button class="btn btn-sm" id="scroll-lock-btn" onclick="toggleScrollLock()">Pause</button>
+    <button class="btn btn-sm" onclick="exportCSV()">Export CSV</button>
+    <button class="btn btn-sm" id="mqtt-view-btn" onclick="toggleMqttView()">MQTT</button>
     <span class="badge" id="log-count2">0 packets</span>
   </div>
   <div class="scroll-area" id="log-container">
@@ -263,13 +306,14 @@
 </div>
 
 <!-- MQTT monitor -->
+  <div class="subnav"><a data-page="log" onclick="showPage('log')">Packet log</a><a data-page="mqtt" onclick="showPage('mqtt')">MQTT monitor</a><a data-page="apidocs" onclick="showPage('apidocs')">API</a></div>
 <div class="page" id="page-mqtt">
   <div class="log-toolbar" style="flex-wrap:wrap">
     <input id="mq-filter" list="mq-suggest" type="text" class="config-num" maxlength="200" style="width:260px" placeholder="meshcore/#">
     <datalist id="mq-suggest"></datalist>
-    <button class="btn btn-send" id="mq-sub" onclick="mqSubscribe()" style="font-size:10px;padding:4px 10px">Subscribe</button>
-    <button class="btn" id="mq-unsub" onclick="mqUnsubscribe()" style="font-size:10px;padding:4px 10px">Unsubscribe</button>
-    <button class="btn" onclick="mqClear()" style="font-size:10px;padding:4px 10px">Clear</button>
+    <button class="btn btn-send btn-sm" id="mq-sub" onclick="mqSubscribe()">Subscribe</button>
+    <button class="btn btn-sm" id="mq-unsub" onclick="mqUnsubscribe()">Unsubscribe</button>
+    <button class="btn btn-sm" onclick="mqClear()">Clear</button>
     <input id="mq-find" type="text" class="config-num" placeholder="find in messages" oninput="mqRender()" style="width:150px">
     <span class="badge" id="mq-state">...</span><span class="badge" id="mq-count">0 messages</span>
     <span class="send-status" id="mq-status"></span>
@@ -278,6 +322,7 @@
 </div>
 
 <!-- API docs -->
+  <div class="subnav"><a data-page="log" onclick="showPage('log')">Packet log</a><a data-page="mqtt" onclick="showPage('mqtt')">MQTT monitor</a><a data-page="apidocs" onclick="showPage('apidocs')">API</a></div>
 <div class="page" id="page-apidocs">
   <div class="scroll-area">
     <div class="api-docs" id="api-docs-content"></div>
