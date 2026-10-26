@@ -78,7 +78,7 @@ def test_validate():
 
 
 def test_choose_target_keeps_inside_travel():
-    s = dict(sw.DEFAULTS, ref_bearing=110.0, travel_deg=90.0)             # allowed 20..200
+    s = dict(sw.DEFAULTS, park_bearing=110.0, travel_deg=90.0)            # allowed 20..200 (window centre = park bearing)
     assert sw.choose_target(s, 190, 110) == 190
     assert sw.choose_target(s, 30, 190) == 30                             # in range directly
     with pytest.raises(sw.MountError):
@@ -125,7 +125,7 @@ def test_deadband_and_stop(mount):
 
 
 def test_goto_refuses_outside_limit(mount):
-    sw.save_settings({'travel_deg': 60})
+    sw.save_settings({'travel_deg': 60, 'park_bearing': 110})
     sw.calibrate(110)
     with pytest.raises(sw.MountError, match='travel limit'):
         sw.goto(250)
@@ -249,7 +249,7 @@ def _deg(d):                                    # fake mount: counts for d degre
 
 def test_guard_stops_at_travel_limit(mount):
     mount.pos = 0
-    sw.save_settings({'travel_deg': 60})                                  # allowed bearings 50..170
+    sw.save_settings({'travel_deg': 60, 'park_bearing': 110})             # allowed bearings 50..170
     sw.calibrate(110)
     mount.script_on_go = [_deg(20), _deg(45), _deg(58.0), _deg(60.8), _deg(63)]      # 170.8 is past 170 + 0.5
     sw.goto(168)                                                           # legal target, but the mount runs on
@@ -286,7 +286,7 @@ def test_rotator_page_and_goto_route(mount):
     page = c.get('/rotator')
     html = page.get_data(as_text=True)
     assert page.status_code == 200 and 'id="stop"' in html and 'viewport-fit=cover' in html
-    for url in ('/api/mount/goto', '/api/mount/nudge', '/api/mount/calibrate', '/api/mount/restore', '/api/mount/stop'):
+    for url in ('/api/mount/goto', '/api/mount/nudge', '/api/mount/calibrate', '/api/mount/restore', '/api/mount/stop', '/api/mount/park'):
         assert url in html
     r = c.post('/api/mount/goto', json={'azimuth': 120}).get_json()
     assert r['ok'] is False and 'calibrated' in r['error']
@@ -333,12 +333,12 @@ def test_ha_discovery_and_subscriptions(ha):
     topics = {t for t, _p, _r in ha.sent}
     for obj in ('sensor/meshcore_mount_bearing', 'sensor/meshcore_mount_state', 'sensor/meshcore_mount_travel_left',
                 'binary_sensor/meshcore_mount_moving', 'number/meshcore_mount_goto', 'button/meshcore_mount_stop',
-                'button/meshcore_mount_nudge_m5', 'button/meshcore_mount_nudge_p1'):
+                'button/meshcore_mount_nudge_m5', 'button/meshcore_mount_nudge_p1', 'button/meshcore_mount_park'):
         assert 'homeassistant/' + obj + '/config' in topics
     assert all(r for _t, _p, r in ha.sent)                                   # discovery is retained
     cfg = json.loads(next(p for t, p, _r in ha.sent if t.endswith('meshcore_mount_goto/config')))
     assert cfg['command_topic'] == mount_ha.ROOT + '/goto' and cfg['min'] == 0 and cfg['max'] == 360
-    assert sorted(ha.subs) == sorted(mount_ha.ROOT + '/' + n for n in ('goto', 'nudge', 'stop'))
+    assert sorted(ha.subs) == sorted(mount_ha.ROOT + '/' + n for n in ('goto', 'nudge', 'park', 'stop'))
 
 
 def test_ha_state_published_on_change(ha):
@@ -349,7 +349,7 @@ def test_ha_state_published_on_change(ha):
     sw.calibrate(95)
     sw.status()
     v = json.loads(ha.sent[-1][1])
-    assert v['state'] == 'stopped' and v['bearing'] == 95.0 and v['moving'] is False and v['travel_left'] == 180.0
+    assert v['state'] == 'stopped' and v['bearing'] == 95.0 and v['moving'] is False and v['travel_left'] == 95.0      # 180 - |95 - park 180|
     n = len(ha.sent)
     sw.status()                                                              # unchanged: nothing new inside the refresh window
     assert len(ha.sent) == n
@@ -378,3 +378,83 @@ def test_ha_publish_failure_never_breaks_status(ha, monkeypatch):
     def boom(*a, **k): raise RuntimeError('broker gone')
     monkeypatch.setattr(ha, 'publish', boom)
     assert sw.status()['ok'] is True
+
+
+# ---- park bearing: the cable-strain reference (default 180 deg) and the Park action ----------------------------------
+
+def test_park_bearing_defaults_to_180_and_validates():
+    assert sw.DEFAULTS['park_bearing'] == 180.0 and sw.settings()['park_bearing'] == 180.0
+    assert sw.validate({'park_bearing': 360})['park_bearing'] == 0.0
+    for bad in ('x', -1, 361, None):
+        with pytest.raises(ValueError):
+            sw.validate({'park_bearing': bad})
+
+
+def test_window_is_centred_on_park_not_on_the_calibration_bearing(mount):
+    sw.save_settings({'travel_deg': 90})                                  # park 180 -> allowed 90..270
+    sw.calibrate(200)                                                      # calibrating elsewhere does not move the window
+    assert sw.settings()['park_bearing'] == 180.0
+    sw.goto(100)                                                           # inside
+    assert sw.status()['travel_left'] == 10.0                              # 90 - |100 - 180|
+    with pytest.raises(sw.MountError, match='travel limit.*park bearing 180'):
+        sw.goto(60)                                                        # outside 90..270
+    assert sw.status()['bearing'] == 100.0
+
+
+def test_calibrate_refuses_a_bearing_the_cable_cannot_reach(mount):
+    sw.save_settings({'travel_deg': 60})                                  # allowed 120..240
+    with pytest.raises(sw.MountError, match='cannot point at 10'):
+        sw.calibrate(10)
+    assert sw.status()['calibrated'] is False                              # nothing was recorded
+    sw.calibrate(130)
+    assert sw.status()['bearing'] == 130.0
+
+
+def test_park_turns_to_180_and_zero_degrees_is_the_far_end(mount):
+    mount.pos = 0
+    sw.calibrate(110)
+    r = sw.park()
+    assert r['detail'].startswith('parking: ') and sw.status()['bearing'] == 180.0
+    assert sw.park()['moved_deg'] == 0.0                                  # already there
+    sw.save_settings({'park_bearing': 90})
+    assert sw.park()['moved_deg'] == -90.0 and sw.status()['bearing'] == 90.0
+
+
+def test_full_travel_is_zero_to_360_so_a_turn_through_north_goes_the_long_way(mount):
+    sw.calibrate(350)
+    r = sw.goto(10)                                                        # 340 deg round through park, never across 0/360
+    assert r['moved_deg'] == -340.0 and sw.status()['bearing'] == 10.0
+
+
+def test_guard_lets_an_antenna_outside_the_window_turn_back_in(mount):
+    mount.pos = 0
+    sw.save_settings({'travel_deg': 60})                                  # park 180 -> allowed 120..240
+    sw.calibrate(130)
+    sw.save_settings({'park_bearing': 250})                               # window 190..310: the antenna (130) is now outside it
+    mount.script_on_go = [_deg(20), _deg(40), _deg(60.05)]                # 150, 170, 190.05: heading back in
+    sw.goto(190)
+    st = sw.status()
+    assert st['fault'] is None and st['bearing'] == pytest.approx(190.1, abs=0.1)
+
+
+def test_guard_still_stops_an_antenna_running_further_out(mount):
+    mount.pos = 0
+    sw.save_settings({'travel_deg': 60})                                  # allowed 120..240
+    sw.calibrate(130)
+    mount.script_on_go = [_deg(-4), _deg(-8), _deg(-11)]                  # 126, 122, 119: past 120 - 0.5 and still going down
+    sw.goto(121)
+    st = sw.status()
+    assert ':L1' in mount.log[-6:] and st['fault'] and 'travel limit' in st['fault']['msg'] and not mount.script
+
+
+def test_park_route_and_ha_command(ha):
+    from bridge import mount_ha, web  # noqa: F401
+    from bridge.extensions import app
+    mount_ha.on_mqtt_connect()
+    c = app.test_client()
+    c.post('/api/mount/calibrate', json={'bearing': 100})
+    r = c.post('/api/mount/park').get_json()
+    assert r['ok'] and r['bearing'] == 180.0 and r['detail'].startswith('parking')
+    sw.nudge(-30)
+    ha.cb[mount_ha.ROOT + '/park'](None, None, _msg('PARK'))
+    assert sw.status()['bearing'] == 180.0

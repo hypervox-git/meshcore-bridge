@@ -187,9 +187,10 @@ def test_travel_window_does_not_slide_across_power_cycles(managed):
         sw.goto(az)
         sw._activity -= 1000
         assert sw.idle_check() is True
-        assert sw.settings()['ref_bearing'] == 110.0                   # window centre never re-based
+        assert sw.settings()['ref_bearing'] == 110.0                   # pairing anchor never re-based
+        assert sw.settings()['park_bearing'] == 180.0                  # nor the window centre
         assert sw.status()['bearing'] == az % 360
-    sw.save_settings({'travel_deg': 60})                               # allowed 50..170
+    sw.save_settings({'travel_deg': 60})                               # allowed 120..240 (park 180)
     with pytest.raises(sw.MountError, match='travel limit'):
         sw.goto(300)
     assert fm.powered is True                                          # (it woke to find out; idle task will cut it)

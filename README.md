@@ -135,7 +135,7 @@ Two ways, which can be combined:
 
 1. **Native entities (works anywhere, also over HTTPS / the mobile app).** With `HA_DISCOVERY = True` the bridge publishes an
    **Antenna rotator** device through MQTT discovery: sensors *Bearing*, *Travel left*, *State*, binary sensor *Turning*, a
-   *Go to bearing* number, and buttons *Stop* and *Turn -5 / -1 / +1 / +5*. State is retained on `<MQTT_TOPIC>/mount/state`;
+   *Go to bearing* number, and buttons *Park*, *Stop* and *Turn -5 / -1 / +1 / +5*. State is retained on `<MQTT_TOPIC>/mount/state`;
    commands go to `<MQTT_TOPIC>/mount/goto` (0-360), `/nudge` (-90..90) and `/stop`. They are validated and run through the same
    code, travel limit and move guard as the web page.
 2. **The full UI in an iframe** (plain `http://` only, see above): an `iframe` card for `http://<bridge-ip>:5001/#antenna`
@@ -222,7 +222,11 @@ The Sky-Watcher AllView motor board speaks the same protocol as the AZ-GTI, over
 - **Connection -> USB serial.** Plug the USB-serial (RJ12) adapter into the mount's handset port with the handset unplugged, set *Serial port* (9600 baud; a `/dev/serial/by-id/...` path survives re-plugging) and **Save**. The Pi user needs the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again). `pip install pyserial` (in `requirements.txt`).
 - **Mount power -> Zigbee socket.** Enter the Zigbee2MQTT base topic of the socket (e.g. `zigbee2mqtt/mount_socket`, no `/set`). A move then: switches the socket on, waits for the controller to answer (*Boot timeout*), initialises it, re-pairs the fresh position count with the last known bearing, and slews. The mount is switched off again *Switch off after* seconds once it has stopped; the final position is saved first, and the socket is never cut while the mount is moving or not answering. While it is off the card shows the last known pointing and does not poll it.
 - **Assumption:** the antenna does not move while the mount is unpowered (keep the clutch tight and the load balanced; a strong wind on a Yagi can back-drive it). If you move it by hand, press **Set current pointing** afterwards.
-- The travel-limit window keeps its original centre across power cycles, so cable protection still holds.
+- **Park bearing (default 180°)** is the cable-strain reference: the antenna's cable hangs relaxed there, the **travel limit** is measured from it
+  (180° either side = the full 0-360° range, never across north), and the **Park** button (Antenna tab, `/rotator`, Home Assistant, `POST /api/mount/park`)
+  turns the antenna to it. The window is fixed by this setting alone, so power cycles and re-calibrating cannot slide it. *Set current pointing* refuses a
+  bearing the cable cannot be at (outside the window). The move guard stops a mount that runs further out of the window, but lets an antenna that is
+  already outside it (e.g. after changing the park bearing) turn back in. Nothing parks the antenna automatically.
 - The socket's state is read from its Zigbee2MQTT state topic (the bridge re-requests it after every MQTT reconnect). Set the socket's Zigbee2MQTT *power-on behaviour* to OFF so a mains cut does not leave the mount on.
 
 Only the azimuth axis is used; keep the altitude axis level. The bridge reads the real position back, so the card shows where the antenna actually points. Protocol: Sky-Watcher motor-controller commands over UDP (`bridge/skywatcher.py`). It has been tested against an emulator only, so try small nudges first; if it overshoots, raise *Brake distance*.

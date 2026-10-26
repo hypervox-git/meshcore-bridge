@@ -77,6 +77,7 @@ details summary{min-height:44px;display:flex;align-items:center;color:var(--mut)
   <h2>Go to bearing (° true)</h2>
   <div class="row"><input id="goto" type="number" inputmode="decimal" min="0" max="360" step="0.1" placeholder="e.g. 245">
   <button id="go" class="primary">Go</button></div>
+  <button id="park" style="width:100%;margin-top:8px">Park 180&deg;</button>
   <div class="grid g2" style="margin-top:8px">
     <button data-az="0">N 0</button><button data-az="90">E 90</button>
     <button data-az="180">S 180</button><button data-az="270">W 270</button>
@@ -97,7 +98,7 @@ details summary{min-height:44px;display:flex;align-items:center;color:var(--mut)
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  let moving = false, timer = null, busy = false, lastBearing = null;
+  let moving = false, timer = null, busy = false, lastBearing = null, parkDeg = 180;
 
   function msg(t, cls){ const m = $('msg'); m.textContent = t || ''; m.className = cls || ''; }
   function api(url, body){
@@ -109,6 +110,7 @@ details summary{min-height:44px;display:flex;align-items:center;color:var(--mut)
     const s = $('state');
     if (!d || d.ok === false){ s.textContent = (d && d.error) || 'No answer from the bridge'; s.className = 's-bad'; return; }
     moving = !!d.moving;
+    if (d.settings && d.settings.park_bearing != null){ parkDeg = d.settings.park_bearing; $('park').textContent = 'Park ' + parkDeg + '\u00b0'; }
     const b = d.bearing;
     if (b != null){
       $('az').innerHTML = b.toFixed(1) + '<small>°</small>';
@@ -155,6 +157,7 @@ details summary{min-height:44px;display:flex;align-items:center;color:var(--mut)
   document.querySelectorAll('[data-az]').forEach(b => b.onclick = () => {
     if (confirm('Slew to ' + b.dataset.az + '°?')) act('/api/mount/goto', {azimuth: parseFloat(b.dataset.az)});
   });
+  $('park').onclick = () => { if (confirm('Park the antenna at ' + parkDeg + '\u00b0?')) act('/api/mount/park', {}); };
   $('go').onclick = () => {
     const v = parseFloat($('goto').value);
     if (isNaN(v)) return msg('Enter a bearing 0–360', 's-bad');

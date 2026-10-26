@@ -864,7 +864,7 @@ steerLoad(false);
 function mountForm(){
   const v = id => document.getElementById(id);
   return {host: v('mt-host').value.trim(), port: parseInt(v('mt-port').value, 10), ref_bearing: parseFloat(v('mt-bearing').value),
-          travel_deg: parseFloat(v('mt-travel').value), brake_deg: parseFloat(v('mt-brake').value), invert: v('mt-invert').checked,
+          park_bearing: parseFloat(v('mt-park').value), travel_deg: parseFloat(v('mt-travel').value), brake_deg: parseFloat(v('mt-brake').value), invert: v('mt-invert').checked,
           transport: v('mt-transport').value, serial_port: v('mt-serial').value.trim(), power_mode: v('mt-power').value,
           power_topic: v('mt-ptopic').value.trim(), boot_timeout_s: parseFloat(v('mt-boot').value), idle_off_s: parseFloat(v('mt-idle').value)};
 }
@@ -880,7 +880,7 @@ function mountFill(d, keepForm){
   const s = d.settings;
   if (!keepForm){
     v('mt-host').value = s.host; v('mt-port').value = s.port; v('mt-bearing').value = s.ref_bearing;
-    v('mt-travel').value = s.travel_deg; v('mt-brake').value = s.brake_deg; v('mt-invert').checked = !!s.invert;
+    v('mt-park').value = s.park_bearing; v('mt-travel').value = s.travel_deg; v('mt-brake').value = s.brake_deg; v('mt-invert').checked = !!s.invert;
     v('mt-transport').value = s.transport; v('mt-serial').value = s.serial_port; v('mt-power').value = s.power_mode;
     v('mt-ptopic').value = s.power_topic; v('mt-boot').value = s.boot_timeout_s; v('mt-idle').value = s.idle_off_s;
     mountShow();
@@ -891,7 +891,7 @@ function mountFill(d, keepForm){
   else if (d.asleep) t = (d.message || 'Mount is switched off.') + (d.calibrated ? ' Last known pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.' : '');
   else if (!d.reachable) t = 'Mount not reachable' + (d.message ? ': ' + d.message : '') + '.';
   else t = 'Mount reachable' + (d.moving ? ' (moving)' : '') + '. ' + (d.calibrated
-    ? 'Pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of travel left before the limit.'
+    ? 'Pointing ' + d.bearing + '\u00b0 true, ' + d.travel_left + '\u00b0 of cable travel left (measured from the park bearing, ' + s.park_bearing + '\u00b0).'
     : 'Not calibrated yet: point the antenna at the bearing above and press Set current pointing.');
   if (d.power_cycled) t = 'Mount position was reset (power-cycled?). If the antenna has not been moved since, press Restore last pointing' + (s.last_bearing != null ? ' (' + s.last_bearing + '\u00b0)' : '') + '; otherwise point it at a known bearing and press Set current pointing.';
   const lk = d.link;
@@ -964,6 +964,8 @@ function mountView(d){
 function rotFill(d){
   const $ = id => document.getElementById(id); if (!$('rot-card')) return;
   const m = mountView(d);
+  window.lastMountSettings = d.settings;
+  if ($('rot-park') && d.settings && d.settings.park_bearing != null) $('rot-park').textContent = 'Park ' + d.settings.park_bearing + '\u00b0';
   if (d.bearing != null){
     $('rot-az').innerHTML = d.bearing.toFixed(1) + '<small>&deg;</small>';
     let a = window.rotAngle == null ? d.bearing : window.rotAngle;                // turn the needle the short way round
@@ -993,6 +995,11 @@ function mountChip(d){
   txt.textContent = 'Mount ' + b + m.chip;
   dot.className = 'dot ' + (m.cls === 'good' ? '' : m.cls === 'warn-text' ? 'warn' : m.cls === 'bad' ? 'offline' : 'idle');
   const st = $('stat-ant'); if (st) st.textContent = d.bearing != null ? d.bearing.toFixed(0) + '°' : '-';
+}
+function rotPark(){
+  const s = (window.lastMountSettings || {}), p = s.park_bearing == null ? 180 : s.park_bearing;
+  if (!confirm('Park the antenna at ' + p + '\u00b0?\n\nIt will stop pointing at its current target until you steer it again.')) return;
+  return mountCall('/api/mount/park', {});
 }
 function rotNum(id){ const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? null : v; }
 function rotTurn(deg){ return mountCall('/api/mount/nudge', {delta: deg}); }

@@ -300,6 +300,11 @@ def api_mount_goto():
     return _guard(lambda: _mount_call(go))
 
 
+@app.route("/api/mount/park", methods=["POST"])
+def api_mount_park():
+    return _guard(lambda: _mount_call(skywatcher.park))
+
+
 @app.route("/api/mount/stop", methods=["POST"])
 def api_mount_stop():
     return _guard(lambda: _mount_call(skywatcher.stop))

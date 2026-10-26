@@ -11,7 +11,8 @@
 # antenna is currently pointing at ("Set current pointing"): that pairs the motor count with a true bearing.
 # After that, bearing = ref_bearing +/- (count - ref_count) * 360 / counts-per-rev. The travel limit stops the
 # coax winding round the mast: a target is always reached the way that stays within +/- travel_deg of the
-# reference bearing, never by spinning through the limit.
+# PARK bearing (park_bearing, default 180 deg: where the cable hangs relaxed and where park() turns the antenna),
+# never by spinning through the limit. ref_bearing is only the pairing anchor of the count, not the window centre.
 # Settings live in MOUNT_FILE (git-ignored) so the web page can change them without a restart. The file also
 # remembers the last position read from the mount (last_pos / last_bearing), so:
 #   * the bridge restarting loses nothing (the mount keeps its own count while powered);
@@ -24,7 +25,8 @@
 # the socket, waits for the controller to boot (and initialises it), re-pairs the fresh count with the last known
 # bearing (the antenna cannot move while unpowered), slews, and the background task switches the socket off again
 # idle_off_s after the mount has stopped. While it is off, status() reports the last known bearing without touching it.
-# The travel-limit window keeps its original centre (ref_bearing) across power cycles, so coax protection still holds.
+# The travel-limit window is centred on park_bearing, which nothing but the settings page changes, so power cycles and
+# re-calibration can never slide it: coax protection always measures from the same place.
 # NOT verified on hardware by the author: check the direction ('Reverse direction') with the +/- 10 buttons.
 import json
 import math
@@ -117,7 +119,7 @@ CYCLED = ('the mount seems to have been power-cycled (its position count was res
 
 # ---- settings ---------------------------------------------------------------------------
 
-DEFAULTS = {'host': '', 'port': 11880, 'ref_bearing': 0.0, 'ref_pos': None, 'travel_deg': 180.0,
+DEFAULTS = {'host': '', 'port': 11880, 'ref_bearing': 0.0, 'ref_pos': None, 'park_bearing': 180.0, 'travel_deg': 180.0,
             'invert': False, 'brake_deg': 5.0, 'last_pos': None, 'last_bearing': None, 'last_unwrapped': None,
             'transport': 'udp', 'serial_port': '/dev/ttyUSB0',
             'power_mode': 'always', 'power_topic': '', 'boot_timeout_s': 25.0, 'idle_off_s': 60.0}
@@ -164,6 +166,8 @@ def validate(d):
         out['port'] = int(_num(d['port'], 'port', 1, 65535))
     if 'ref_bearing' in d:
         out['ref_bearing'] = _num(d['ref_bearing'], 'initial bearing', 0, 360) % 360.0
+    if 'park_bearing' in d:
+        out['park_bearing'] = _num(d['park_bearing'], 'park bearing', 0, 360) % 360.0
     if 'travel_deg' in d:
         out['travel_deg'] = _num(d['travel_deg'], 'travel limit', 30, 360)
     if 'brake_deg' in d:
@@ -222,6 +226,11 @@ def power_cycled(s, pos):
     return pos == 0 and s.get('last_pos') not in (None, 0)
 
 
+def _centre(s):
+    """Centre of the cable-travel window (and where park() goes): the park bearing."""
+    return s['park_bearing']
+
+
 def _last_unwrapped(s):
     """The last known UNWRAPPED bearing (so the travel window is respected); older files only hold the 0-360 value."""
     ub = s.get('last_unwrapped')
@@ -229,14 +238,14 @@ def _last_unwrapped(s):
         return float(ub)
     lb = float(s['last_bearing'])
     try:
-        return choose_target(s, lb, s['ref_bearing'])
+        return choose_target(s, lb, _centre(s))
     except MountError:
         return lb
 
 
 def _rebase(s, pos, cpr):
-    """Re-pair the current count `pos` with the last known bearing, keeping ref_bearing (the centre of the travel
-    window) unchanged, so repeated power cycles can never slide the cable-protection window."""
+    """Re-pair the current count `pos` with the last known bearing, keeping the anchor ref_bearing unchanged. (The travel
+    window is centred on park_bearing, so it cannot slide however often the mount is power-cycled.)"""
     ub = _last_unwrapped(s)
     ref_pos = pos - round(_sign(s) * (ub - s['ref_bearing']) * cpr / 360.0)
     cur = _saved()
@@ -575,12 +584,12 @@ def counts_for(s, bearing, cpr):
 def choose_target(s, az, current):
     """Bearing (deg, unwrapped) to move to for compass azimuth `az`: the turn that stays inside the travel limit,
     nearest the current heading. Raises MountError if none."""
-    lo, hi = s['ref_bearing'] - s['travel_deg'], s['ref_bearing'] + s['travel_deg']
+    lo, hi = _centre(s) - s['travel_deg'], _centre(s) + s['travel_deg']
     base = az % 360.0
     k0 = math.floor((lo - base) / 360.0) - 1
     cands = [base + 360.0 * k for k in range(k0, k0 + 5) if lo - 1e-6 <= base + 360.0 * k <= hi + 1e-6]
     if not cands:
-        raise MountError(f'{az:.0f}° is outside the travel limit (reference {s["ref_bearing"]:.0f}° +/- {s["travel_deg"]:.0f}°)')
+        raise MountError(f'{az:.0f}° is outside the travel limit (park bearing {_centre(s):.0f}° +/- {s["travel_deg"]:.0f}°)')
     return min(cands, key=lambda c: abs(c - current))
 
 
@@ -617,10 +626,13 @@ def _supervise(delta, start, cpr, gen):
                 bad = 0
                 b = bearing_of(s, pos, cpr)
                 _touch()
-                lo, hi = s['ref_bearing'] - s['travel_deg'], s['ref_bearing'] + s['travel_deg']
+                lo, hi = _centre(s) - s['travel_deg'], _centre(s) + s['travel_deg']
+                bdir = direction * _sign(s)                               # +1: the bearing is increasing
                 prog = (pos - start) * direction
                 peak = max(peak, prog)
-                if b < lo - LIMIT_MARGIN_DEG or b > hi + LIMIT_MARGIN_DEG:
+                # Outside the window AND still turning outwards = stop. Turning back in (e.g. after the park bearing or
+                # travel limit was changed with the cable already past it) is exactly what we want, so that is allowed.
+                if (b < lo - LIMIT_MARGIN_DEG and bdir < 0) or (b > hi + LIMIT_MARGIN_DEG and bdir > 0):
                     reason = f'travel limit exceeded ({b:.1f} deg, allowed {lo:.0f} to {hi:.0f})'
                 elif prog - want > allow:
                     reason = f'overshot the target by {(prog - want) * 360.0 / cpr:.1f} deg'
@@ -723,13 +735,25 @@ def calibrate(bearing=None, s=None):
         s = dict(_wake(s, rebase=False), ref_bearing=s['ref_bearing'])
         if _running(s):
             raise MountError('the mount is moving - wait for it to stop, then set the pointing')
+        try:
+            ub = choose_target(s, s['ref_bearing'], _centre(s))            # the way round the cable can really be
+        except MountError:
+            raise MountError(f"the antenna cannot point at {s['ref_bearing']:.0f}\u00b0: the cable travel is limited to the park bearing "
+                             f"{_centre(s):.0f}\u00b0 +/- {s['travel_deg']:.0f}\u00b0. Turn it by hand into that range, or widen the travel limit")
         _cpr(s)
         pos = _pos(s)
     cur = _saved()
-    cur.update(ref_bearing=s['ref_bearing'], ref_pos=pos, last_pos=pos, last_bearing=round(s['ref_bearing'], 3),
-               last_unwrapped=round(s['ref_bearing'], 3))
+    cur.update(ref_bearing=ub, ref_pos=pos, last_pos=pos, last_bearing=round(ub % 360.0, 3), last_unwrapped=round(ub, 3))
     _write(cur)
     return {'detail': f"mount pointing set to {s['ref_bearing']:.1f}° (motor count {pos})"}
+
+
+def park(s=None):
+    """Turn the antenna to the park bearing (the cable-relaxed position, default 180 deg)."""
+    s = s or settings()
+    res = goto(s['park_bearing'], s)
+    res['detail'] = 'parking: ' + res['detail']
+    return res
 
 
 def restore(s=None):
@@ -772,7 +796,7 @@ def _status(s=None, remember=True):
         if s.get('ref_pos') is not None and s.get('last_bearing') is not None:
             ub = _last_unwrapped(s)
             out.update(bearing=round(ub % 360, 1), unwrapped=round(ub, 1),
-                       travel_left=round(s['travel_deg'] - abs(ub - s['ref_bearing']), 1))
+                       travel_left=round(s['travel_deg'] - abs(ub - _centre(s)), 1))
         out['link'] = link_view()
         return out
     try:
@@ -785,7 +809,7 @@ def _status(s=None, remember=True):
             elif s.get('ref_pos') is not None:
                 b = bearing_of(s, pos, cpr)
                 out.update(bearing=round(b % 360, 1), unwrapped=round(b, 1),
-                           travel_left=round(s['travel_deg'] - abs(b - s['ref_bearing']), 1))
+                           travel_left=round(s['travel_deg'] - abs(b - _centre(s)), 1))
                 if remember:
                     _remember(pos, b)
     except MountError as e:

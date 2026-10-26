@@ -3,6 +3,7 @@
 #   State   <MQTT_TOPIC>/mount/state    retained JSON {state, bearing, travel_left, moving, socket}
 #   Control <MQTT_TOPIC>/mount/goto     payload: bearing 0-360        (HA number "Go to bearing")
 #           <MQTT_TOPIC>/mount/nudge    payload: degrees, -90..90      (HA buttons)
+#           <MQTT_TOPIC>/mount/park     any payload                    (HA button "Park": turn to the park bearing)
 #           <MQTT_TOPIC>/mount/stop     any payload                    (HA button "Stop")
 #
 # This gives Home Assistant native entities (device "Antenna rotator") that work from any dashboard, the iPhone
@@ -96,6 +97,7 @@ def discovery():
          value_template='{{ value_json.bearing }}', min=0, max=360, step=1, mode='box',
          unit_of_measurement='°', icon='mdi:crosshairs-gps')
     _cfg('button', 'stop', 'Stop', command_topic=f'{ROOT}/stop', payload_press='STOP', icon='mdi:stop-circle')
+    _cfg('button', 'park', 'Park', command_topic=f'{ROOT}/park', payload_press='PARK', icon='mdi:parking')
     for n in NUDGES:
         _cfg('button', f'nudge_{"m" if n < 0 else "p"}{abs(n)}', f'Turn {n:+d}°', command_topic=f'{ROOT}/nudge',
              payload_press=str(n), icon='mdi:rotate-left' if n < 0 else 'mdi:rotate-right')
@@ -138,6 +140,10 @@ def on_nudge(client, userdata, msg):
         _run(lambda sw: sw.nudge(d), f'nudge {d}')
 
 
+def on_park(client, userdata, msg):
+    _run(lambda sw: sw.park(), 'park')
+
+
 def on_stop(client, userdata, msg):
     _run(lambda sw: sw.stop(), 'stop')
 
@@ -147,7 +153,7 @@ def on_mqtt_connect():
     if not _connected():
         return
     c = _client()
-    for name, fn in (('goto', on_goto), ('nudge', on_nudge), ('stop', on_stop)):
+    for name, fn in (('goto', on_goto), ('nudge', on_nudge), ('park', on_park), ('stop', on_stop)):
         c.message_callback_add(f'{ROOT}/{name}', fn)
         c.subscribe(f'{ROOT}/{name}', qos=1)
     _last.update(payload=None, ts=0.0)

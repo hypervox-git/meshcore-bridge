@@ -93,7 +93,9 @@ NEIGHBOUR_ACTIVE_HOURS  = 24      # a row stays green this long after it was las
 
 # Sky-Watcher AZ-GTI antenna rotator (Test tab -> "Sky-Watcher mount"); settings saved from the web UI
 MOUNT_FILE              = "meshcore_mount.json"   # git-ignored
-MOUNT_DEFAULTS          = {}      # e.g. {"host": "192.168.1.60", "travel_deg": 180}
+MOUNT_DEFAULTS          = {}      # e.g. {"host": "192.168.1.60", "travel_deg": 180, "park_bearing": 180}
+                                  # park_bearing (default 180) = where the cable hangs relaxed: the Park button turns the antenna
+                                  # there and the travel limit (cable-strain guard) is measured from it
                                   # AllView over USB serial + Zigbee socket: {"transport": "serial", "serial_port": "/dev/ttyUSB0",
                                   #   "power_mode": "zigbee", "power_topic": "zigbee2mqtt/mount_socket", "idle_off_s": 60}
 
