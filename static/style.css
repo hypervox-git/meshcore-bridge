@@ -289,3 +289,8 @@
   .status-bar{gap:.5rem}
   .test-grid .tm-chart{height:180px}
 }
+
+/* neighbour table: readings older than 30 min are faded; the antenna bearing they were taken at is shown small */
+.nb-table td.nbt-old{opacity:.45}
+.nb-az{font-size:9px;color:var(--text-muted);margin-left:4px}
+.sw-best{font-weight:700;text-decoration:underline}

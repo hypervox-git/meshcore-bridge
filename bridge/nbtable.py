@@ -134,6 +134,19 @@ def _find(ident):
     return (m[0], False) if len(m) == 1 else (None, len(m) > 1)
 
 
+def _ant_az():
+    """The antenna's aim (deg true) right now - the real mount bearing once the mount has been read."""
+    try:
+        from bridge import antenna
+        v = _f((antenna.override() or {}).get('azimuth_deg'))
+        return round(v, 1) if v is not None else None
+    except Exception:
+        return None
+
+
+LIVE_S = 120                                   # a reading this recent was taken at the antenna's current aim
+
+
 def _f(v):
     try:
         return float(v)
@@ -180,12 +193,13 @@ def heard(ident, via='advert', ts=None, snr=None, rssi=None, name=None, lat=None
                            linkmodel.haversine_km(loc['lat'], loc['lon'], lat, lon) > _radius_km()):
                 return False
             e = {'key': key, 'name': name or '', 'type': typ, 'lat': lat, 'lon': lon, 'src': 'heard',
-                 'heard_ts': None, 'heard_via': None, 'snr': None, 'rssi': None, 'range_km': None,
+                 'heard_ts': None, 'heard_via': None, 'snr': None, 'rssi': None, 'ant_az': None, 'range_km': None,
                  'bearing_deg': None, 'public_ts': None, 'added_ts': time.time()}
             _entries[key] = e
         changed = created
         if e.get('heard_ts') is None or ts > e['heard_ts'] + REFRESH_TOLERANCE_S:
             e['heard_ts'], e['heard_via'] = ts, via
+            e['ant_az'] = _ant_az() if time.time() - ts <= LIVE_S else None     # aim when heard (unknown for old data)
             changed = True
         for field, val in (('snr', snr), ('rssi', rssi)):
             if val is not None and e.get(field) != val:

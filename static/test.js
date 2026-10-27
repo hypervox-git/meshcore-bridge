@@ -113,13 +113,16 @@ function nbtRender(d){
     const age = e.heard_ts != null ? (d.now - e.heard_ts) + el_s : null;
     const on = age != null && age <= d.active_s;
     const via = e.heard_via ? ' (' + escHtml(e.heard_via) + ')' : '';
+    const old = age != null && age > 1800 ? 'nbt-old' : '';
+    const tip = age == null ? '' : 'measured ' + nbtAge(age) + ' ago' + (e.ant_az != null ? ' with the antenna at ' + Math.round(e.ant_az) + ' deg' : '');
+    const az = e.ant_az != null ? '<span class="nb-az">@' + Math.round(e.ant_az) + '&deg;</span>' : '';
     return '<tr class="' + (on ? 'nbt-live' : 'nbt-muted') + '"><td><div class="nb-name">' + escHtml(aliases[e.key] || e.name || e.key.slice(0, 8))
       + '</div><div class="nb-id">' + escHtml(e.key.slice(0, 8)) + '</div></td>'
       + '<td>' + (e.range_km == null ? '-' : e.range_km.toFixed(1) + ' km') + '</td>'
       + '<td>' + (e.bearing_deg == null ? '-' : Math.round(e.bearing_deg) + '&deg;') + '</td>'
       + '<td>' + (age == null ? 'never' : nbtAge(age) + ' ago' + via) + '</td>'
-      + '<td>' + (e.rssi == null ? '-' : fmt(e.rssi, ' dBm', 0)) + '</td>'
-      + '<td>' + (e.snr == null ? '-' : fmt(e.snr, ' dB', 1)) + '</td></tr>';
+      + '<td class="' + old + '" title="' + tip + '">' + (e.rssi == null ? '-' : fmt(e.rssi, ' dBm', 0)) + az + '</td>'
+      + '<td class="' + old + '" title="' + tip + '">' + (e.snr == null ? '-' : fmt(e.snr, ' dB', 1)) + az + '</td></tr>';
   }).join('') + '</table>';
   el.innerHTML = h;
 }
@@ -1115,3 +1118,48 @@ function mountBanner(d){
   el.style.display = d && d.moving ? '' : 'none';
   if (d && d.moving) document.getElementById('ms-az').textContent = 'Azimuth ' + (d.bearing != null ? d.bearing.toFixed(1) + '\u00b0' : '-');
 }
+
+
+// ---- Antenna sweep (Neighbours tab): signal vs bearing -----------------------------------------------
+function sweepStart(){
+  const span = parseFloat(document.getElementById('sw-span').value), step = parseFloat(document.getElementById('sw-step').value);
+  if (!confirm('Turn the antenna through +/-' + span + ' deg in ' + step + ' deg steps?\n\nIt sends one Discover per stop (rate limited) and returns to its current bearing afterwards.')) return;
+  setStatus('sw-status', 'Starting...', 'ok');
+  post('/api/sweep/start', {span, step}).then(d => { if (!d.ok) setStatus('sw-status', d.error, 'err'); else sweepRender(d); })
+    .catch(e => setStatus('sw-status', 'Error: ' + e, 'err'));
+}
+function sweepStop(){ post('/api/sweep/stop', {}).then(sweepRender).catch(() => {}); }
+function sweepAim(az){
+  setStatus('sw-status', 'Turning to ' + az + '\u00b0...', 'ok');
+  post('/api/mount/goto', {azimuth: az}).then(d => setStatus('sw-status', d.ok ? (d.detail || 'Turning') : d.error, d.ok ? 'ok' : 'err'))
+    .catch(e => setStatus('sw-status', 'Error: ' + e, 'err'));
+}
+function sweepRender(d){
+  if (!d || !document.getElementById('sw-results')) return;
+  const PH = {starting: 'starting', turning: 'turning', settling: 'settling', discovering: 'listening for replies', returning: 'returning to start'};
+  document.getElementById('sw-start').disabled = !!d.running;
+  document.getElementById('sw-stop').disabled = !d.running;
+  const st = document.getElementById('sw-status');
+  if (d.running){ st.className = 'send-status ok'; st.textContent = 'Stop ' + d.idx + '/' + d.total + ' at ' + Math.round(d.current_az) + '\u00b0 - ' + (PH[d.phase] || d.phase) + ' (about ' + Math.round(d.est_s / 60) + ' min in all)'; }
+  else if (d.error){ st.className = 'send-status err'; st.textContent = d.error; }
+  else if (d.reason){ st.className = 'send-status'; st.textContent = d.reason === 'complete' ? 'Sweep complete' : 'Sweep ' + d.reason; }
+  const res = d.results || [];
+  const el = document.getElementById('sw-results');
+  if (!res.length){ el.innerHTML = ''; return; }
+  const keys = [];
+  res.forEach(r => Object.keys(r.readings || {}).forEach(k => { if (!keys.includes(k)) keys.push(k); }));
+  if (!keys.length){ el.innerHTML = '<div class="empty-state">No neighbour answered at any stop. Only nodes in direct radio range reply to Discover, and the repeater firmware must support discover.neighbors.</div>'; return; }
+  const best = {};
+  keys.forEach(k => res.forEach(r => { const v = (r.readings || {})[k]; if (v && v.snr != null && (!best[k] || v.snr > best[k].snr)) best[k] = {snr: v.snr, az: r.actual != null ? r.actual : r.az}; }));
+  let h = '<table class="nb-table"><tr><th>Bearing</th>' + keys.map(k => '<th>' + escHtml(aliases[k] || (d.names || {})[k] || k.slice(0, 8)) + '</th>').join('') + '</tr>';
+  h += res.map(r => '<tr><td>' + Math.round(r.actual != null ? r.actual : r.az) + '&deg;</td>' + keys.map(k => {
+    const v = (r.readings || {})[k];
+    if (!v) return '<td style="color:var(--text-muted)">no reply</td>';
+    const isBest = best[k] && best[k].snr === v.snr;
+    return '<td class="' + (isBest ? 'sw-best' : '') + '" style="color:' + snrColor(v.snr) + '">' + fmt(v.snr, ' dB', 1) + (v.rssi != null ? ' / ' + fmt(v.rssi, ' dBm', 0) : '') + '</td>';
+  }).join('') + '</tr>').join('');
+  h += '<tr><td>Best</td>' + keys.map(k => best[k] ? '<td><button class="btn btn-sm" onclick="sweepAim(' + best[k].az + ')">Aim ' + Math.round(best[k].az) + '&deg;</button></td>' : '<td>-</td>').join('') + '</tr></table>';
+  el.innerHTML = h;
+}
+socket.on('sweep', sweepRender);
+fetch('/api/sweep').then(r => r.json()).then(sweepRender).catch(() => {});
